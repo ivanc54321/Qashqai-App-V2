@@ -180,136 +180,164 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState, onToggleHotspo
       envMapIntensity: 1.6,
     });
 
-    // Load 2018 Nissan Qashqai FBX
-    const loader = new FBXLoader();
-    loader.setResourcePath('./models/qashqai/');
+    // Load 2018 Nissan Qashqai FBX (from embedded base64 in self-contained preview, or via URL in Vite app)
+    const embeddedB64 = (window as unknown as { __EMBEDDED_FBX_B64__?: string }).__EMBEDDED_FBX_B64__;
+    const manager = new THREE.LoadingManager();
+    if (embeddedB64) {
+      // Prevent any relative texture fetches in sandboxed srcdoc iframes
+      const blankPng =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+      manager.setURLModifier(() => blankPng);
+    }
+
+    const loader = new FBXLoader(manager);
+    if (!embeddedB64) {
+      loader.setResourcePath('./models/qashqai/');
+    }
     let isDisposed = false;
 
-    loader.load(
-      './models/qashqai/FINAL_MODEL.fbx',
-      (fbx) => {
-        if (isDisposed) return;
+    const handleLoadedModel = (fbx: THREE.Group) => {
+      if (isDisposed) return;
 
-        // Normalize scale & center onto turntable (y = 0, max dimension ~4.4 units)
-        const box = new THREE.Box3().setFromObject(fbx);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
+      // Normalize scale & center onto turntable (y = 0, max dimension ~4.45 units)
+      const box = new THREE.Box3().setFromObject(fbx);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
 
-        const maxDim = Math.max(size.x, size.y, size.z) || 1;
-        const targetLength = 4.45;
-        const scaleFactor = targetLength / maxDim;
-        fbx.scale.setScalar(scaleFactor);
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const targetLength = 4.45;
+      const scaleFactor = targetLength / maxDim;
+      fbx.scale.setScalar(scaleFactor);
 
-        // Recompute bounds after scaling
-        const scaledBox = new THREE.Box3().setFromObject(fbx);
-        const scaledCenter = new THREE.Vector3();
-        scaledBox.getCenter(scaledCenter);
-        fbx.position.x -= scaledCenter.x;
-        fbx.position.z -= scaledCenter.z;
-        fbx.position.y -= scaledBox.min.y;
+      // Recompute bounds after scaling
+      const scaledBox = new THREE.Box3().setFromObject(fbx);
+      const scaledCenter = new THREE.Vector3();
+      scaledBox.getCenter(scaledCenter);
+      fbx.position.x -= scaledCenter.x;
+      fbx.position.z -= scaledCenter.z;
+      fbx.position.y -= scaledBox.min.y;
 
-        // Traverse meshes to apply obsidian black paint, preserve chrome, and tag interactive parts
-        fbx.traverse((child) => {
-          if (!(child instanceof THREE.Mesh)) return;
-          child.castShadow = true;
-          child.receiveShadow = true;
+      // Traverse meshes to apply obsidian black paint, preserve chrome, and tag interactive parts
+      fbx.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        child.castShadow = true;
+        child.receiveShadow = true;
 
-          const meshName = child.name.toLowerCase();
-          const isDoor = meshName.includes('door_');
-          const isTrunk = meshName.includes('houbeixiang') || meshName.includes('goubeixiang');
-          const isLightMesh =
-            meshName.includes('light_tex') || meshName.includes('f_glass') || meshName.includes('light_glass');
+        const meshName = child.name.toLowerCase();
+        const isDoor = meshName.includes('door_');
+        const isTrunk = meshName.includes('houbeixiang') || meshName.includes('goubeixiang');
+        const isLightMesh =
+          meshName.includes('light_tex') || meshName.includes('f_glass') || meshName.includes('light_glass');
 
-          const upgradeMaterial = (origMat: THREE.Material): THREE.Material => {
-            const matName = (origMat.name || '').toLowerCase();
+        const upgradeMaterial = (origMat: THREE.Material): THREE.Material => {
+          const matName = (origMat.name || '').toLowerCase();
 
-            // Car body paint -> Glossy Metallic Obsidian Black
-            if (matName.includes('carpaint')) {
-              const paintMat = obsidianBlackPaint.clone();
-              if ('aoMap' in origMat && (origMat as THREE.MeshStandardMaterial).aoMap) {
-                paintMat.aoMap = (origMat as THREE.MeshStandardMaterial).aoMap;
-              }
-              if (isDoor) doorMats.push(paintMat);
-              if (isTrunk) trunkMats.push(paintMat);
-              return paintMat;
+          // Car body paint -> Glossy Metallic Obsidian Black
+          if (matName.includes('carpaint')) {
+            const paintMat = obsidianBlackPaint.clone();
+            if (!embeddedB64 && 'aoMap' in origMat && (origMat as THREE.MeshStandardMaterial).aoMap) {
+              paintMat.aoMap = (origMat as THREE.MeshStandardMaterial).aoMap;
             }
-
-            // Silver/Chrome trim & Nissan badges -> bright metallic contrast
-            if (matName.includes('sliver') || matName.includes('chrome') || matName.includes('nissan')) {
-              return chromeTrimMat;
-            }
-
-            // Windows -> sleek dark tinted reflective glass
-            if (matName.includes('window')) {
-              return tintedGlassMat;
-            }
-
-            // Headlights / light housings -> emissive-capable standard material
-            if (matName.includes('light_tex') || matName.includes('light_glass') || isLightMesh) {
-              const std = new THREE.MeshStandardMaterial({
-                color: 0xe0f2fe,
-                map: (origMat as THREE.MeshPhongMaterial).map || null,
-                metalness: 0.4,
-                roughness: 0.15,
-                emissive: new THREE.Color(0xbae6fd),
-                emissiveIntensity: 1.4,
-                transparent: matName.includes('glass'),
-                opacity: matName.includes('glass') ? 0.65 : 1.0,
-              });
-              headlightMats.push(std);
-              return std;
-            }
-
-            // Tires & matte plastic trim
-            if (matName.includes('luntai') || matName.includes('blackplasic') || matName.includes('black3')) {
-              const std = new THREE.MeshStandardMaterial({
-                color: new THREE.Color(0x14171f),
-                map: (origMat as THREE.MeshPhongMaterial).map || null,
-                roughness: matName.includes('ref') ? 0.28 : 0.72,
-                metalness: matName.includes('ref') ? 0.55 : 0.15,
-                envMapIntensity: 1.0,
-              });
-              if (isDoor) doorMats.push(std);
-              if (isTrunk) trunkMats.push(std);
-              return std;
-            }
-
-            // Fallback: convert Phong/Lambert to Standard so it responds to RoomEnvironment
-            const src = origMat as THREE.MeshPhongMaterial;
-            const fallback = new THREE.MeshStandardMaterial({
-              color: src.color ? src.color.clone() : new THREE.Color(0x334155),
-              map: src.map || null,
-              roughness: 0.45,
-              metalness: 0.35,
-              envMapIntensity: 1.1,
-            });
-            if (isDoor) doorMats.push(fallback);
-            if (isTrunk) trunkMats.push(fallback);
-            return fallback;
-          };
-
-          if (Array.isArray(child.material)) {
-            child.material = child.material.map(upgradeMaterial);
-          } else if (child.material) {
-            child.material = upgradeMaterial(child.material);
+            if (isDoor) doorMats.push(paintMat);
+            if (isTrunk) trunkMats.push(paintMat);
+            return paintMat;
           }
-        });
 
-        carGroup.add(fbx);
-        setIsLoaded(true);
-      },
-      (xhr) => {
-        if (xhr.total > 0) {
-          setLoadProgress(Math.round((xhr.loaded / xhr.total) * 100));
+          // Silver/Chrome trim & Nissan badges -> bright metallic contrast
+          if (matName.includes('sliver') || matName.includes('chrome') || matName.includes('nissan')) {
+            return chromeTrimMat;
+          }
+
+          // Windows -> sleek dark tinted reflective glass
+          if (matName.includes('window')) {
+            return tintedGlassMat;
+          }
+
+          // Headlights / light housings -> emissive-capable standard material
+          if (matName.includes('light_tex') || matName.includes('light_glass') || isLightMesh) {
+            const std = new THREE.MeshStandardMaterial({
+              color: 0xe0f2fe,
+              map: !embeddedB64 ? (origMat as THREE.MeshPhongMaterial).map || null : null,
+              metalness: 0.4,
+              roughness: 0.15,
+              emissive: new THREE.Color(0xbae6fd),
+              emissiveIntensity: 1.4,
+              transparent: matName.includes('glass'),
+              opacity: matName.includes('glass') ? 0.65 : 1.0,
+            });
+            headlightMats.push(std);
+            return std;
+          }
+
+          // Tires & matte plastic trim
+          if (matName.includes('luntai') || matName.includes('blackplasic') || matName.includes('black3')) {
+            const std = new THREE.MeshStandardMaterial({
+              color: new THREE.Color(0x14171f),
+              map: !embeddedB64 ? (origMat as THREE.MeshPhongMaterial).map || null : null,
+              roughness: matName.includes('ref') ? 0.28 : 0.72,
+              metalness: matName.includes('ref') ? 0.55 : 0.15,
+              envMapIntensity: 1.0,
+            });
+            if (isDoor) doorMats.push(std);
+            if (isTrunk) trunkMats.push(std);
+            return std;
+          }
+
+          // Fallback: convert Phong/Lambert to Standard so it responds to RoomEnvironment
+          const src = origMat as THREE.MeshPhongMaterial;
+          const fallback = new THREE.MeshStandardMaterial({
+            color: src.color ? src.color.clone() : new THREE.Color(0x334155),
+            map: !embeddedB64 ? src.map || null : null,
+            roughness: 0.45,
+            metalness: 0.35,
+            envMapIntensity: 1.1,
+          });
+          if (isDoor) doorMats.push(fallback);
+          if (isTrunk) trunkMats.push(fallback);
+          return fallback;
+        };
+
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map(upgradeMaterial);
+        } else if (child.material) {
+          child.material = upgradeMaterial(child.material);
         }
-      },
-      (err) => {
-        console.error('Failed to load Qashqai FBX:', err);
+      });
+
+      carGroup.add(fbx);
+      setIsLoaded(true);
+    };
+
+    if (embeddedB64) {
+      try {
+        const binary = atob(embeddedB64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const parsed = loader.parse(bytes.buffer, '');
+        handleLoadedModel(parsed);
+      } catch (err) {
+        console.error('Failed to parse embedded Qashqai FBX:', err);
         setIsLoaded(true);
       }
-    );
+    } else {
+      loader.load(
+        './models/qashqai/FINAL_MODEL.fbx',
+        handleLoadedModel,
+        (xhr) => {
+          if (xhr.total > 0) {
+            setLoadProgress(Math.round((xhr.loaded / xhr.total) * 100));
+          }
+        },
+        (err) => {
+          console.error('Failed to load Qashqai FBX:', err);
+          setIsLoaded(true);
+        }
+      );
+    }
 
     // Interactive 3D Hotspots (clickable glowing spheres)
     const hotspotMeshes: { mesh: THREE.Mesh; key: keyof CarHotspotState }[] = [];
