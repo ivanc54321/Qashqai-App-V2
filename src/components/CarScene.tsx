@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { RotateCcw } from 'lucide-react';
 
 export interface CarHotspotState {
   headlights: boolean;
@@ -9,9 +10,59 @@ export interface CarHotspotState {
   trunkOpen: boolean;
 }
 
+export type CameraPreset = 'overview' | 'navigation' | 'media' | 'lights' | 'doors' | 'trunk';
+
+interface CameraPresetConfig {
+  position: [number, number, number];
+  target: [number, number, number];
+  autoRotate: boolean;
+  label: string;
+}
+
+const CAMERA_PRESETS: Record<CameraPreset, CameraPresetConfig> = {
+  overview: {
+    position: [4.1, 1.52, 4.65],
+    target: [0, 0.65, 0],
+    autoRotate: true,
+    label: 'Overview',
+  },
+  navigation: {
+    position: [0.35, 6.2, 2.75],
+    target: [0, 0.3, 0.15],
+    autoRotate: false,
+    label: 'Navigation',
+  },
+  media: {
+    position: [2.75, 1.16, 2.45],
+    target: [0.05, 0.82, 0.15],
+    autoRotate: false,
+    label: 'Media Close-Up',
+  },
+  lights: {
+    position: [1.3, 0.88, 4.05],
+    target: [0, 0.62, 1.65],
+    autoRotate: false,
+    label: 'Headlights',
+  },
+  doors: {
+    position: [4.25, 1.24, 0.12],
+    target: [0, 0.78, 0.05],
+    autoRotate: false,
+    label: 'Side Profile',
+  },
+  trunk: {
+    position: [-2.6, 1.36, -4.05],
+    target: [0, 0.72, -1.35],
+    autoRotate: false,
+    label: 'Rear View',
+  },
+};
+
 interface CarSceneProps {
   hotspotState: CarHotspotState;
   onToggleHotspot: (key: keyof CarHotspotState) => void;
+  cameraPreset: CameraPreset;
+  presetTrigger: number;
 }
 
 declare global {
@@ -157,15 +208,168 @@ function createUKPlateTexture(text: string, variant: 'front' | 'rear'): THREE.Ca
   return tex;
 }
 
-export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
+/**
+ * Generates a subtle glowing studio floor compass & radar ring
+ * that fades in during Navigation bird's-eye view.
+ */
+function createNavCompassTexture(): THREE.CanvasTexture {
+  const size = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  // Soft outer radar glow
+  const glow = ctx.createRadialGradient(cx, cy, size * 0.24, cx, cy, size * 0.49);
+  glow.addColorStop(0, 'rgba(56, 189, 248, 0)');
+  glow.addColorStop(0.55, 'rgba(56, 189, 248, 0.08)');
+  glow.addColorStop(0.82, 'rgba(148, 163, 184, 0.05)');
+  glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+
+  // Concentric thin studio rings
+  const drawRing = (radius: number, stroke: string, width: number, dash: number[] = []) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.setLineDash(dash);
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = width;
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  drawRing(size * 0.46, 'rgba(186, 230, 253, 0.34)', 2.5);
+  drawRing(size * 0.42, 'rgba(148, 163, 184, 0.22)', 1.5, [6, 12]);
+  drawRing(size * 0.33, 'rgba(56, 189, 248, 0.22)', 1.5);
+
+  // Degree tick marks around the outer compass ring
+  for (let i = 0; i < 72; i++) {
+    const angle = (i / 72) * Math.PI * 2;
+    const isMajor = i % 18 === 0;
+    const isMedium = i % 6 === 0;
+    const rOuter = size * 0.46;
+    const rInner = rOuter - (isMajor ? 24 : isMedium ? 14 : 7);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(angle) * rInner, cy + Math.sin(angle) * rInner);
+    ctx.lineTo(cx + Math.cos(angle) * rOuter, cy + Math.sin(angle) * rOuter);
+    ctx.strokeStyle = isMajor ? 'rgba(224, 242, 254, 0.78)' : 'rgba(148, 163, 184, 0.32)';
+    ctx.lineWidth = isMajor ? 3 : 1.5;
+    ctx.stroke();
+  }
+
+  // Forward heading chevron (pointing toward +Z in world space -> bottom of plane UV)
+  ctx.save();
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.85)';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + size * 0.485);
+  ctx.lineTo(cx - 14, cy + size * 0.445);
+  ctx.lineTo(cx + 14, cy + size * 0.445);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Cardinal labels
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.7)';
+  ctx.font = '700 24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('N', cx, cy + size * 0.39);
+  ctx.fillText('S', cx, cy - size * 0.39);
+  ctx.fillText('E', cx - size * 0.39, cy);
+  ctx.fillText('W', cx + size * 0.39, cy);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+interface CameraTransition {
+  active: boolean;
+  startTime: number;
+  duration: number;
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  endAutoRotate: boolean;
+}
+
+export const CarScene: React.FC<CarSceneProps> = ({
+  hotspotState,
+  cameraPreset,
+  presetTrigger,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<CarHotspotState>(hotspotState);
+  const presetRef = useRef<CameraPreset>(cameraPreset);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const transitionRef = useRef<CameraTransition>({
+    active: false,
+    startTime: 0,
+    duration: 0.9,
+    fromPos: new THREE.Vector3(),
+    toPos: new THREE.Vector3(),
+    fromTarget: new THREE.Vector3(),
+    toTarget: new THREE.Vector3(),
+    endAutoRotate: true,
+  });
+
   const [loadProgress, setLoadProgress] = useState<number>(0);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const [orbitedTrigger, setOrbitedTrigger] = useState<number>(-1);
+  const presetTriggerRef = useRef<number>(presetTrigger);
+
+  const isUserOrbited = orbitedTrigger === presetTrigger;
+
+  const triggerGlideToPreset = (presetKey: CameraPreset) => {
+    const cam = cameraRef.current;
+    const ctrls = controlsRef.current;
+    if (!cam || !ctrls) return;
+    const cfg = CAMERA_PRESETS[presetKey];
+    ctrls.autoRotate = false;
+    transitionRef.current = {
+      active: true,
+      startTime: performance.now(),
+      duration: 0.9,
+      fromPos: cam.position.clone(),
+      toPos: new THREE.Vector3(...cfg.position),
+      fromTarget: ctrls.target.clone(),
+      toTarget: new THREE.Vector3(...cfg.target),
+      endAutoRotate: cfg.autoRotate,
+    };
+    setOrbitedTrigger(-1);
+  };
 
   useEffect(() => {
     stateRef.current = hotspotState;
   }, [hotspotState]);
+
+  useEffect(() => {
+    presetRef.current = cameraPreset;
+    presetTriggerRef.current = presetTrigger;
+    if (presetTrigger === 0) return;
+    const cam = cameraRef.current;
+    const ctrls = controlsRef.current;
+    if (!cam || !ctrls) return;
+    const cfg = CAMERA_PRESETS[cameraPreset];
+    ctrls.autoRotate = false;
+    transitionRef.current = {
+      active: true,
+      startTime: performance.now(),
+      duration: 0.9,
+      fromPos: cam.position.clone(),
+      toPos: new THREE.Vector3(...cfg.position),
+      fromTarget: ctrls.target.clone(),
+      toTarget: new THREE.Vector3(...cfg.target),
+      endAutoRotate: cfg.autoRotate,
+    };
+  }, [cameraPreset, presetTrigger]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -180,7 +384,8 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
       100
     );
     // Low 3/4 front hero angle matching dark studio reference
-    camera.position.set(4.1, 1.52, 4.65);
+    camera.position.set(...CAMERA_PRESETS.overview.position);
+    cameraRef.current = camera;
 
     const applyCameraOffset = () => {
       const w = container.clientWidth;
@@ -217,13 +422,21 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
     controls.enableDamping = true;
     controls.dampingFactor = 0.055;
     controls.enablePan = false;
-    controls.minDistance = 3.2;
-    controls.maxDistance = 9.0;
+    controls.minDistance = 2.2;
+    controls.maxDistance = 9.5;
     controls.maxPolarAngle = Math.PI / 2 - 0.025;
-    controls.minPolarAngle = 0.18;
-    controls.target.set(0, 0.65, 0);
+    controls.minPolarAngle = 0.12;
+    controls.target.set(...CAMERA_PRESETS.overview.target);
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.5;
+    controlsRef.current = controls;
+
+    const handleUserControlStart = () => {
+      transitionRef.current.active = false;
+      controls.autoRotate = false;
+      setOrbitedTrigger(presetTriggerRef.current);
+    };
+    controls.addEventListener('start', handleUserControlStart);
 
     // Studio Lighting Rig
     const ambientLight = new THREE.AmbientLight(0xe2e8f0, 0.2);
@@ -262,6 +475,20 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
     floorPool.rotation.x = -Math.PI / 2;
     floorPool.position.y = 0.002;
     scene.add(floorPool);
+
+    // Navigation floor compass / radar ring (fades in during Navigation preset)
+    const navCompassTex = createNavCompassTexture();
+    const navCompassMat = new THREE.MeshBasicMaterial({
+      map: navCompassTex,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const navCompassPlane = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 6.8), navCompassMat);
+    navCompassPlane.rotation.x = -Math.PI / 2;
+    navCompassPlane.position.y = 0.006;
+    scene.add(navCompassPlane);
 
     // High-contrast soft contact shadow catcher beneath tires & chassis
     const shadowCatcher = new THREE.Mesh(
@@ -666,6 +893,27 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
         m.emissiveIntensity = trunkPulse;
       });
 
+      // Smooth cubic ease-out camera glide between presets
+      const tr = transitionRef.current;
+      if (tr.active) {
+        const elapsed = (performance.now() - tr.startTime) / 1000;
+        const p = Math.min(1, elapsed / tr.duration);
+        const ease = 1 - Math.pow(1 - p, 3);
+        camera.position.lerpVectors(tr.fromPos, tr.toPos, ease);
+        controls.target.lerpVectors(tr.fromTarget, tr.toTarget, ease);
+        if (p >= 1) {
+          tr.active = false;
+          controls.autoRotate = tr.endAutoRotate;
+        }
+      }
+
+      // Smooth fade & subtle rotation for Navigation floor compass ring
+      const targetCompassOpacity = presetRef.current === 'navigation' ? 0.78 : 0;
+      navCompassMat.opacity += (targetCompassOpacity - navCompassMat.opacity) * 0.08;
+      if (navCompassMat.opacity > 0.01) {
+        navCompassPlane.rotation.z = Math.sin(t * 0.25) * 0.04;
+      }
+
       controls.update();
       renderer.render(scene, camera);
     };
@@ -676,8 +924,10 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
       isDisposed = true;
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
+      controls.removeEventListener('start', handleUserControlStart);
       controls.dispose();
       floorTex.dispose();
+      navCompassTex.dispose();
       glowTex.dispose();
       carpaintAoTex.dispose();
       bakedShadowTex.dispose();
@@ -692,6 +942,17 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
+
+      {isLoaded && isUserOrbited && (
+        <button
+          onClick={() => triggerGlideToPreset(cameraPreset)}
+          className="absolute bottom-5 left-5 z-20 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/65 px-3.5 py-2 text-xs font-medium text-zinc-100 backdrop-blur-xl shadow-xl hover:border-white/35 hover:bg-black/80 active:scale-95 transition cursor-pointer"
+          aria-label="Reset camera view"
+        >
+          <RotateCcw className="h-3.5 w-3.5 text-zinc-300" />
+          <span>Reset View</span>
+        </button>
+      )}
 
       {!isLoaded && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

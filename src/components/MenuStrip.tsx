@@ -29,11 +29,12 @@ import {
   Trash2,
   Loader2,
 } from 'lucide-react';
-import type { CarHotspotState } from './CarScene';
+import type { CarHotspotState, CameraPreset } from './CarScene';
 
 interface MenuStripProps {
   hotspotState: CarHotspotState;
   onToggleHotspot: (key: keyof CarHotspotState) => void;
+  onSelectCameraPreset: (preset: CameraPreset) => void;
 }
 
 type TabKey = 'overview' | 'navigation' | 'media';
@@ -72,7 +73,11 @@ const formatFileSize = (bytes: number) => {
 
 const stripExtension = (filename: string) => filename.replace(/\.[^/.]+$/, '');
 
-export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHotspot }) => {
+export const MenuStrip: React.FC<MenuStripProps> = ({
+  hotspotState,
+  onToggleHotspot,
+  onSelectCameraPreset,
+}) => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
   const [timeStr, setTimeStr] = useState('');
@@ -376,7 +381,10 @@ export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHots
           return (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => {
+                setActiveTab(tab.key);
+                onSelectCameraPreset(tab.key);
+              }}
               className={`rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
                 active
                   ? 'bg-white text-black shadow-sm'

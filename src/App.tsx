@@ -1,6 +1,12 @@
 import { useState, useCallback } from 'react';
-import { CarScene, type CarHotspotState } from './components/CarScene';
+import { CarScene, type CarHotspotState, type CameraPreset } from './components/CarScene';
 import { MenuStrip } from './components/MenuStrip';
+
+const HOTSPOT_TO_PRESET: Record<keyof CarHotspotState, CameraPreset> = {
+  headlights: 'lights',
+  doorsOpen: 'doors',
+  trunkOpen: 'trunk',
+};
 
 export function App() {
   const [hotspotState, setHotspotState] = useState<CarHotspotState>({
@@ -8,12 +14,21 @@ export function App() {
     doorsOpen: false,
     trunkOpen: false,
   });
+  const [cameraPreset, setCameraPreset] = useState<CameraPreset>('overview');
+  const [presetTrigger, setPresetTrigger] = useState<number>(0);
+
+  const handleSelectCameraPreset = useCallback((preset: CameraPreset) => {
+    setCameraPreset(preset);
+    setPresetTrigger((n) => n + 1);
+  }, []);
 
   const handleToggleHotspot = useCallback((key: keyof CarHotspotState) => {
     setHotspotState((prev) => ({
       ...prev,
       [key]: !prev[key],
     }));
+    setCameraPreset(HOTSPOT_TO_PRESET[key]);
+    setPresetTrigger((n) => n + 1);
   }, []);
 
   return (
@@ -30,13 +45,22 @@ export function App() {
       {/* Full-Bleed 3D Car Stage */}
       <main className="relative z-10 h-full w-full">
         <section className="absolute inset-0 z-10">
-          <CarScene hotspotState={hotspotState} onToggleHotspot={handleToggleHotspot} />
+          <CarScene
+            hotspotState={hotspotState}
+            onToggleHotspot={handleToggleHotspot}
+            cameraPreset={cameraPreset}
+            presetTrigger={presetTrigger}
+          />
         </section>
 
         {/* Right-Hand Floating Menu Overlay */}
         <section className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full max-w-[400px] flex-col justify-center p-4 lg:p-6">
           <div className="pointer-events-auto max-h-full overflow-y-auto">
-            <MenuStrip hotspotState={hotspotState} onToggleHotspot={handleToggleHotspot} />
+            <MenuStrip
+              hotspotState={hotspotState}
+              onToggleHotspot={handleToggleHotspot}
+              onSelectCameraPreset={handleSelectCameraPreset}
+            />
           </div>
         </section>
       </main>
