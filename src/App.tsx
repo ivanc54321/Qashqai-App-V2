@@ -26,7 +26,7 @@ export function App() {
         playsInline
         className="pointer-events-none fixed inset-0 h-full w-full object-cover"
       >
-        <source src="/background.mp4" type="video/mp4" />
+        <source src="./background.mp4" type="video/mp4" />
       </video>
 
       {/* Subtle dark vignette overlay for contrast */}

@@ -182,11 +182,11 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState, onToggleHotspo
 
     // Load 2018 Nissan Qashqai FBX
     const loader = new FBXLoader();
-    loader.setResourcePath('/models/qashqai/');
+    loader.setResourcePath('./models/qashqai/');
     let isDisposed = false;
 
     loader.load(
-      '/models/qashqai/FINAL_MODEL.fbx',
+      './models/qashqai/FINAL_MODEL.fbx',
       (fbx) => {
         if (isDisposed) return;
 
