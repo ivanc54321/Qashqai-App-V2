@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Navigation,
   MapPin,
@@ -20,6 +20,14 @@ import {
   Calendar,
   Car,
   Disc,
+  Radio,
+  Music,
+  Film,
+  FolderOpen,
+  Maximize2,
+  X,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import type { CarHotspotState } from './CarScene';
 
@@ -29,27 +37,27 @@ interface MenuStripProps {
 }
 
 type TabKey = 'overview' | 'navigation' | 'media';
+type MediaMode = 'radio' | 'music' | 'videos';
+type ActiveAudioSource = 'none' | 'radio' | 'local-music';
+type RadioStatus = 'idle' | 'loading' | 'playing' | 'error';
 
-const TRACKS = [
-  {
-    title: 'Midnight Drive',
-    artist: 'Synthwave Collective',
-    duration: 214,
-    coverGradient: 'from-zinc-700 via-zinc-800 to-black',
-  },
-  {
-    title: 'Neon Horizon',
-    artist: 'Kavinsky & Friends',
-    duration: 198,
-    coverGradient: 'from-neutral-600 via-neutral-800 to-black',
-  },
-  {
-    title: 'Electric Avenue',
-    artist: 'Autobahn',
-    duration: 242,
-    coverGradient: 'from-slate-700 via-zinc-900 to-black',
-  },
-];
+interface LocalMediaItem {
+  id: string;
+  name: string;
+  url: string;
+  sizeLabel: string;
+}
+
+const KISS_FM_STATION = {
+  name: 'KISS FM',
+  subtitle: '100 FM • UK Live Radio',
+  streams: [
+    'https://stream-al.planetradio.co.uk/kissnational.aac',
+    'https://stream-mz.planetradio.co.uk/kissnational.aac',
+    'https://edge-bauerall-01-gos2.sharp-stream.com/kissnational.mp3',
+    'https://edge-bauerall-01-gos2.sharp-stream.com/kissnational.aac',
+  ],
+};
 
 const DESTINATIONS = [
   { name: 'Home', address: 'Bristol, UK', eta: '14 min', distance: '6.2 mi' },
@@ -57,15 +65,48 @@ const DESTINATIONS = [
   { name: 'City Centre', address: 'Cabot Circus Parking', eta: '19 min', distance: '8.4 mi' },
 ];
 
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const stripExtension = (filename: string) => filename.replace(/\.[^/.]+$/, '');
+
 export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHotspot }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
   const [timeStr, setTimeStr] = useState('');
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [trackIndex, setTrackIndex] = useState(0);
-  const [progress, setProgress] = useState(64);
-  const [volume, setVolume] = useState(72);
+  const [volume, setVolume] = useState(80);
   const [activeDest, setActiveDest] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Live Radio (KISS FM) & Local Audio shared HTMLAudioElement
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const musicInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
+  const streamIdxRef = useRef(0);
+  const activeSourceRef = useRef<ActiveAudioSource>('none');
+  const createdUrlsRef = useRef<string[]>([]);
+
+  const [activeAudioSource, setActiveAudioSource] = useState<ActiveAudioSource>('none');
+  const [radioStatus, setRadioStatus] = useState<RadioStatus>('idle');
+
+  // Local Music state
+  const [localTracks, setLocalTracks] = useState<LocalMediaItem[]>([]);
+  const [localTrackIndex, setLocalTrackIndex] = useState(0);
+  const [localPlaying, setLocalPlaying] = useState(false);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+
+  // Local Videos state
+  const [localVideos, setLocalVideos] = useState<LocalMediaItem[]>([]);
+  const [localVideoIndex, setLocalVideoIndex] = useState(0);
+  const [videoFullscreen, setVideoFullscreen] = useState(false);
+
+  useEffect(() => {
+    activeSourceRef.current = activeAudioSource;
+  }, [activeAudioSource]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -77,36 +118,201 @@ export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHots
     return () => clearInterval(id);
   }, []);
 
+  // Sync volume to audio and video elements
   useEffect(() => {
-    if (!isPlaying) return;
-    const id = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= TRACKS[trackIndex].duration) {
-          setTrackIndex((i) => (i + 1) % TRACKS.length);
-          return 0;
-        }
-        return prev + 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [isPlaying, trackIndex]);
+    const v = Math.min(1, Math.max(0, volume / 100));
+    if (audioRef.current) audioRef.current.volume = v;
+    if (videoRef.current) videoRef.current.volume = v;
+  }, [volume]);
 
-  const currentTrack = TRACKS[trackIndex];
+  // Cleanup audio and blob URLs on unmount
+  useEffect(() => {
+    const urls = createdUrlsRef.current;
+    const audio = audioRef.current;
+    return () => {
+      if (audio) {
+        audio.pause();
+        audio.src = '';
+      }
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, []);
+
+  const stopAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
+    setActiveAudioSource('none');
+    setRadioStatus('idle');
+    setLocalPlaying(false);
+  }, []);
+
+  const startKissStreamAt = useCallback(
+    (initialIdx: number) => {
+      const tryStream = (idx: number) => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        streamIdxRef.current = idx;
+        audio.src = KISS_FM_STATION.streams[idx];
+        audio.volume = volume / 100;
+        audio.play().catch(() => {
+          if (activeSourceRef.current !== 'radio') return;
+          if (idx + 1 < KISS_FM_STATION.streams.length) {
+            tryStream(idx + 1);
+          } else {
+            setRadioStatus('error');
+          }
+        });
+      };
+      tryStream(initialIdx);
+    },
+    [volume]
+  );
+
+  const handleToggleKissFm = () => {
+    if (activeAudioSource === 'radio' && (radioStatus === 'playing' || radioStatus === 'loading')) {
+      stopAudio();
+      return;
+    }
+    if (videoRef.current) videoRef.current.pause();
+    setLocalPlaying(false);
+    setActiveAudioSource('radio');
+    activeSourceRef.current = 'radio';
+    setRadioStatus('loading');
+    startKissStreamAt(0);
+  };
+
+  const playLocalTrack = useCallback(
+    (index: number, tracksList: LocalMediaItem[] = localTracks) => {
+      const track = tracksList[index];
+      const audio = audioRef.current;
+      if (!track || !audio) return;
+      if (videoRef.current) videoRef.current.pause();
+      setRadioStatus('idle');
+      setActiveAudioSource('local-music');
+      activeSourceRef.current = 'local-music';
+      setLocalTrackIndex(index);
+      setAudioCurrentTime(0);
+      setAudioDuration(0);
+      audio.src = track.url;
+      audio.volume = volume / 100;
+      audio.play().catch(() => setLocalPlaying(false));
+    },
+    [localTracks, volume]
+  );
+
+  const handleToggleLocalMusic = () => {
+    const audio = audioRef.current;
+    if (!audio || localTracks.length === 0) return;
+    if (activeAudioSource !== 'local-music') {
+      playLocalTrack(localTrackIndex);
+      return;
+    }
+    if (audio.paused) {
+      if (videoRef.current) videoRef.current.pause();
+      audio.play().catch(() => setLocalPlaying(false));
+    } else {
+      audio.pause();
+    }
+  };
+
+  const handleNextTrack = () => {
+    if (localTracks.length === 0) return;
+    const nextIdx = (localTrackIndex + 1) % localTracks.length;
+    playLocalTrack(nextIdx);
+  };
+
+  const handlePrevTrack = () => {
+    if (localTracks.length === 0) return;
+    const prevIdx = (localTrackIndex - 1 + localTracks.length) % localTracks.length;
+    playLocalTrack(prevIdx);
+  };
+
+  const handleAddMusicFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const newItems: LocalMediaItem[] = files.map((file) => {
+      const url = URL.createObjectURL(file);
+      createdUrlsRef.current.push(url);
+      return {
+        id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+        name: stripExtension(file.name),
+        url,
+        sizeLabel: formatFileSize(file.size),
+      };
+    });
+    const updated = [...localTracks, ...newItems];
+    setLocalTracks(updated);
+    setMediaMode('music');
+    if (activeAudioSource !== 'local-music') {
+      playLocalTrack(localTracks.length, updated);
+    }
+    e.target.value = '';
+  };
+
+  const handleRemoveMusicTrack = (id: string, idx: number) => {
+    const target = localTracks[idx];
+    if (target) URL.revokeObjectURL(target.url);
+    const updated = localTracks.filter((t) => t.id !== id);
+    setLocalTracks(updated);
+    if (updated.length === 0) {
+      if (activeAudioSource === 'local-music') stopAudio();
+      setLocalTrackIndex(0);
+    } else if (idx === localTrackIndex) {
+      const nextIdx = Math.min(idx, updated.length - 1);
+      setLocalTrackIndex(nextIdx);
+      if (activeAudioSource === 'local-music') playLocalTrack(nextIdx, updated);
+    } else if (idx < localTrackIndex) {
+      setLocalTrackIndex((prev) => Math.max(0, prev - 1));
+    }
+  };
+
+  const handleAddVideoFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const newItems: LocalMediaItem[] = files.map((file) => {
+      const url = URL.createObjectURL(file);
+      createdUrlsRef.current.push(url);
+      return {
+        id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+        name: stripExtension(file.name),
+        url,
+        sizeLabel: formatFileSize(file.size),
+      };
+    });
+    const startIdx = localVideos.length;
+    setLocalVideos((prev) => [...prev, ...newItems]);
+    setLocalVideoIndex(startIdx);
+    setMediaMode('videos');
+    e.target.value = '';
+  };
+
+  const handleRemoveVideo = (id: string, idx: number) => {
+    const target = localVideos[idx];
+    if (target) URL.revokeObjectURL(target.url);
+    const updated = localVideos.filter((v) => v.id !== id);
+    setLocalVideos(updated);
+    if (updated.length === 0) {
+      setLocalVideoIndex(0);
+      setVideoFullscreen(false);
+    } else if (idx <= localVideoIndex) {
+      setLocalVideoIndex(Math.max(0, Math.min(localVideoIndex - (idx < localVideoIndex ? 1 : 0), updated.length - 1)));
+    }
+  };
+
   const formatTime = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
+    if (!isFinite(sec) || sec < 0) return '0:00';
+    const whole = Math.floor(sec);
+    const m = Math.floor(whole / 60);
+    const s = whole % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const handleNext = () => {
-    setTrackIndex((i) => (i + 1) % TRACKS.length);
-    setProgress(0);
-  };
-
-  const handlePrev = () => {
-    setTrackIndex((i) => (i - 1 + TRACKS.length) % TRACKS.length);
-    setProgress(0);
-  };
+  const currentLocalTrack = localTracks[localTrackIndex];
+  const currentLocalVideo = localVideos[localVideoIndex];
 
   const filteredDests = DESTINATIONS.filter(
     (d) =>
@@ -339,63 +545,376 @@ export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHots
         </div>
       )}
 
-      {/* Tab 3: Media Now Playing */}
+      {/* Persistent Audio Element & Hidden File Pickers (survives tab switches) */}
+      <audio
+        ref={audioRef}
+        preload="none"
+        onPlaying={() => {
+          if (activeSourceRef.current === 'radio') setRadioStatus('playing');
+          if (activeSourceRef.current === 'local-music') setLocalPlaying(true);
+        }}
+        onWaiting={() => {
+          if (activeSourceRef.current === 'radio') setRadioStatus('loading');
+        }}
+        onPause={() => {
+          if (activeSourceRef.current === 'local-music') setLocalPlaying(false);
+        }}
+        onTimeUpdate={(e) => {
+          if (activeSourceRef.current === 'local-music') {
+            setAudioCurrentTime(e.currentTarget.currentTime);
+          }
+        }}
+        onLoadedMetadata={(e) => {
+          if (activeSourceRef.current === 'local-music') {
+            const dur = e.currentTarget.duration;
+            setAudioDuration(isFinite(dur) ? dur : 0);
+          }
+        }}
+        onEnded={() => {
+          if (activeSourceRef.current === 'local-music') {
+            if (localTracks.length > 1) {
+              const nextIdx = (localTrackIndex + 1) % localTracks.length;
+              playLocalTrack(nextIdx);
+            } else {
+              setLocalPlaying(false);
+            }
+          }
+        }}
+        onError={() => {
+          if (activeSourceRef.current === 'radio') {
+            const nextIdx = streamIdxRef.current + 1;
+            if (nextIdx < KISS_FM_STATION.streams.length) {
+              startKissStreamAt(nextIdx);
+            } else {
+              setRadioStatus('error');
+            }
+          } else if (activeSourceRef.current === 'local-music') {
+            setLocalPlaying(false);
+          }
+        }}
+      />
+      <input
+        ref={musicInputRef}
+        type="file"
+        multiple
+        accept="audio/*"
+        onChange={handleAddMusicFiles}
+        className="hidden"
+        aria-label="Select local music files"
+      />
+      <input
+        ref={videoInputRef}
+        type="file"
+        multiple
+        accept="video/*"
+        onChange={handleAddVideoFiles}
+        className="hidden"
+        aria-label="Select local video files"
+      />
+
+      {/* Tab 3: Media Hub (Radio • Local Music • Local Videos) */}
       {activeTab === 'media' && (
-        <div className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-black/55 p-5 backdrop-blur-xl shadow-2xl">
-          <div className="flex items-center gap-4">
-            <div
-              className={`h-14 w-14 shrink-0 rounded-2xl bg-gradient-to-br ${currentTrack.coverGradient} border border-white/10 shadow-lg flex items-center justify-center`}
-            >
-              <div className="h-4 w-4 rounded-full bg-white/25 backdrop-blur-sm" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold text-white">{currentTrack.title}</div>
-              <div className="truncate text-xs text-zinc-400">{currentTrack.artist}</div>
-            </div>
-            <button
-              onClick={() => setIsPlaying((p) => !p)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? (
-                <Pause className="h-4 w-4 fill-current" />
-              ) : (
-                <Play className="h-4 w-4 fill-current ml-0.5" />
+        <div className="flex flex-col gap-3.5 rounded-3xl border border-white/10 bg-black/55 p-4 backdrop-blur-xl shadow-2xl">
+          {/* Media Source Selector */}
+          <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] p-1">
+            {(
+              [
+                { id: 'radio', label: 'Radio', Icon: Radio },
+                { id: 'music', label: 'Music', Icon: Music },
+                { id: 'videos', label: 'Videos', Icon: Film },
+              ] as const
+            ).map(({ id, label, Icon }) => {
+              const active = mediaMode === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setMediaMode(id)}
+                  className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                    active
+                      ? 'bg-white text-black shadow-sm'
+                      : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 1. Live Radio: One-Click KISS FM UK */}
+          {mediaMode === 'radio' && (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleToggleKissFm}
+                className={`group flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left transition cursor-pointer ${
+                  activeAudioSource === 'radio' && (radioStatus === 'playing' || radioStatus === 'loading')
+                    ? 'border-pink-500/50 bg-gradient-to-r from-pink-600/25 via-fuchsia-600/15 to-black/40 shadow-lg'
+                    : 'border-white/15 bg-white/[0.05] hover:border-white/30 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500 via-fuchsia-600 to-purple-800 text-white font-black tracking-tight text-sm shadow-md">
+                  KISS
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-bold text-white">{KISS_FM_STATION.name}</span>
+                    {activeAudioSource === 'radio' && radioStatus === 'playing' && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 border border-red-500/30">
+                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                        LIVE
+                      </span>
+                    )}
+                  </div>
+                  <div className="truncate text-[11px] text-zinc-400">
+                    {activeAudioSource === 'radio' && radioStatus === 'loading'
+                      ? 'Connecting to live stream...'
+                      : activeAudioSource === 'radio' && radioStatus === 'error'
+                        ? 'Stream unavailable — tap to retry'
+                        : KISS_FM_STATION.subtitle}
+                  </div>
+                </div>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-md group-hover:scale-105 active:scale-95 transition">
+                  {activeAudioSource === 'radio' && radioStatus === 'loading' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : activeAudioSource === 'radio' && radioStatus === 'playing' ? (
+                    <Pause className="h-4 w-4 fill-current" />
+                  ) : (
+                    <Play className="h-4 w-4 fill-current ml-0.5" />
+                  )}
+                </div>
+              </button>
+
+              {activeAudioSource === 'radio' && radioStatus === 'playing' && (
+                <div className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2 text-[11px] text-zinc-300">
+                  <span className="flex items-center gap-1.5">
+                    <Radio className="h-3.5 w-3.5 text-pink-400" />
+                    On Air • Tap KISS FM to stop
+                  </span>
+                  <span className="font-mono text-zinc-400">100.0 FM</span>
+                </div>
               )}
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-white transition-all duration-300"
-                style={{ width: `${(progress / currentTrack.duration) * 100}%` }}
-              />
             </div>
-            <div className="flex justify-between text-[11px] text-zinc-500">
-              <span>{formatTime(progress)}</span>
-              <span>{formatTime(currentTrack.duration)}</span>
-            </div>
-          </div>
+          )}
 
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrev}
-                className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white transition cursor-pointer"
-                aria-label="Previous track"
-              >
-                <SkipBack className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleNext}
-                className="rounded-xl p-2 text-zinc-400 hover:bg-white/10 hover:text-white transition cursor-pointer"
-                aria-label="Next track"
-              >
-                <SkipForward className="h-4 w-4" />
-              </button>
-            </div>
+          {/* 2. Local Music Player */}
+          {mediaMode === 'music' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-300">
+                  Local Music ({localTracks.length})
+                </span>
+                <button
+                  onClick={() => musicInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Add Music
+                </button>
+              </div>
 
+              {currentLocalTrack ? (
+                <>
+                  <div className="flex items-center gap-3 rounded-2xl bg-white/[0.05] p-3 border border-white/10">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
+                      <Music className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-semibold text-white">
+                        {currentLocalTrack.name}
+                      </div>
+                      <div className="text-[11px] text-zinc-400">
+                        Local Audio • {currentLocalTrack.sizeLabel}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleToggleLocalMusic}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+                      aria-label={localPlaying && activeAudioSource === 'local-music' ? 'Pause' : 'Play'}
+                    >
+                      {localPlaying && activeAudioSource === 'local-music' ? (
+                        <Pause className="h-4 w-4 fill-current" />
+                      ) : (
+                        <Play className="h-4 w-4 fill-current ml-0.5" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Seek Bar */}
+                  <div className="flex flex-col gap-1">
+                    <input
+                      type="range"
+                      min={0}
+                      max={audioDuration || 1}
+                      step={0.5}
+                      value={Math.min(audioCurrentTime, audioDuration || 1)}
+                      onChange={(e) => {
+                        const t = Number(e.target.value);
+                        setAudioCurrentTime(t);
+                        if (audioRef.current) audioRef.current.currentTime = t;
+                      }}
+                      className="w-full accent-white cursor-pointer h-1"
+                      aria-label="Seek track"
+                    />
+                    <div className="flex justify-between text-[10px] text-zinc-500">
+                      <span>{formatTime(audioCurrentTime)}</span>
+                      <span>{formatTime(audioDuration)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={handlePrevTrack}
+                      className="rounded-xl p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                      aria-label="Previous track"
+                    >
+                      <SkipBack className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={handleNextTrack}
+                      className="rounded-xl p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                      aria-label="Next track"
+                    >
+                      <SkipForward className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Playlist */}
+                  <div className="flex max-h-28 flex-col gap-1 overflow-y-auto pr-0.5">
+                    {localTracks.map((track, idx) => {
+                      const isCurrent = idx === localTrackIndex && activeAudioSource === 'local-music';
+                      return (
+                        <div
+                          key={track.id}
+                          className={`flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-xs transition ${
+                            isCurrent
+                              ? 'bg-white/15 text-white border border-white/20'
+                              : 'bg-white/[0.03] text-zinc-300 hover:bg-white/10 border border-transparent'
+                          }`}
+                        >
+                          <button
+                            onClick={() => playLocalTrack(idx)}
+                            className="min-w-0 flex-1 truncate text-left cursor-pointer"
+                          >
+                            {track.name}
+                          </button>
+                          <button
+                            onClick={() => handleRemoveMusicTrack(track.id, idx)}
+                            className="p-1 text-zinc-500 hover:text-red-400 transition cursor-pointer"
+                            aria-label={`Remove ${track.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={() => musicInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] py-6 text-center hover:border-white/30 hover:bg-white/[0.06] transition cursor-pointer"
+                >
+                  <Music className="h-6 w-6 text-zinc-400" />
+                  <div className="text-xs font-medium text-zinc-200">Tap to load local music</div>
+                  <div className="text-[11px] text-zinc-500">MP3, M4A, WAV, FLAC from your device</div>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 3. Local Video Player */}
+          {mediaMode === 'videos' && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-300">
+                  Local Videos ({localVideos.length})
+                </span>
+                <button
+                  onClick={() => videoInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  Add Videos
+                </button>
+              </div>
+
+              {currentLocalVideo ? (
+                <>
+                  <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">
+                    <video
+                      ref={videoRef}
+                      key={currentLocalVideo.id}
+                      src={currentLocalVideo.url}
+                      controls
+                      playsInline
+                      onPlay={() => {
+                        if (activeSourceRef.current !== 'none') stopAudio();
+                      }}
+                      className="h-36 w-full object-contain bg-black"
+                    />
+                    <button
+                      onClick={() => setVideoFullscreen(true)}
+                      className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg bg-black/70 text-white border border-white/15 hover:bg-black transition cursor-pointer"
+                      aria-label="Expand video fullscreen"
+                      title="Fullscreen"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex max-h-24 flex-col gap-1 overflow-y-auto pr-0.5">
+                    {localVideos.map((vid, idx) => {
+                      const isCurrent = idx === localVideoIndex;
+                      return (
+                        <div
+                          key={vid.id}
+                          className={`flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-xs transition ${
+                            isCurrent
+                              ? 'bg-white/15 text-white border border-white/20'
+                              : 'bg-white/[0.03] text-zinc-300 hover:bg-white/10 border border-transparent'
+                          }`}
+                        >
+                          <button
+                            onClick={() => setLocalVideoIndex(idx)}
+                            className="min-w-0 flex-1 truncate text-left cursor-pointer"
+                          >
+                            {vid.name}
+                          </button>
+                          <button
+                            onClick={() => handleRemoveVideo(vid.id, idx)}
+                            className="p-1 text-zinc-500 hover:text-red-400 transition cursor-pointer"
+                            aria-label={`Remove ${vid.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <button
+                  onClick={() => videoInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] py-6 text-center hover:border-white/30 hover:bg-white/[0.06] transition cursor-pointer"
+                >
+                  <Film className="h-6 w-6 text-zinc-400" />
+                  <div className="text-xs font-medium text-zinc-200">Tap to load local videos</div>
+                  <div className="text-[11px] text-zinc-500">MP4, WebM, MOV from your device</div>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Shared Master Volume Bar */}
+          <div className="flex items-center justify-between border-t border-white/10 pt-2.5">
+            <span className="text-[11px] text-zinc-400">
+              {activeAudioSource === 'radio'
+                ? 'KISS FM Live'
+                : activeAudioSource === 'local-music'
+                  ? 'Local Audio'
+                  : 'Master Volume'}
+            </span>
             <div className="flex items-center gap-2 w-32">
               <Volume2 className="h-4 w-4 text-zinc-400 shrink-0" />
               <input
@@ -409,6 +928,34 @@ export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHots
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Fullscreen Video Theater Overlay */}
+      {videoFullscreen && currentLocalVideo && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 p-4 backdrop-blur-md">
+          <div className="mb-3 flex w-full max-w-5xl items-center justify-between">
+            <span className="truncate text-sm font-semibold text-white">
+              {currentLocalVideo.name}
+            </span>
+            <button
+              onClick={() => setVideoFullscreen(false)}
+              className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+              Close
+            </button>
+          </div>
+          <video
+            src={currentLocalVideo.url}
+            controls
+            autoPlay
+            playsInline
+            onPlay={() => {
+              if (activeSourceRef.current !== 'none') stopAudio();
+            }}
+            className="max-h-[82vh] w-full max-w-5xl rounded-2xl bg-black shadow-2xl"
+          />
         </div>
       )}
 
