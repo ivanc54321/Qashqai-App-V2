@@ -28,6 +28,8 @@ import {
   X,
   Trash2,
   Loader2,
+  ExternalLink,
+  Layers,
 } from 'lucide-react';
 import type { CarHotspotState, CameraPreset } from './CarScene';
 
@@ -61,9 +63,27 @@ const KISS_FM_STATION = {
 };
 
 const DESTINATIONS = [
-  { name: 'Home', address: 'Bristol, UK', eta: '14 min', distance: '6.2 mi' },
-  { name: 'Shell Diesel Station', address: 'Bath Road • Open 24h', eta: '5 min', distance: '1.8 mi' },
-  { name: 'City Centre', address: 'Cabot Circus Parking', eta: '19 min', distance: '8.4 mi' },
+  {
+    name: 'Westwood Cross',
+    address: 'Margate, Kent CT10 2BF',
+    query: 'Westwood Cross, Margate, Kent, UK',
+    eta: '6 min',
+    distance: '2.1 mi',
+  },
+  {
+    name: 'Shell Diesel Station',
+    address: 'Margate Road • Broadstairs',
+    query: 'Shell, Margate Road, Broadstairs, Kent, UK',
+    eta: '4 min',
+    distance: '1.3 mi',
+  },
+  {
+    name: 'Margate Seafront',
+    address: 'Marine Terrace, Margate',
+    query: 'Margate Main Sands, Margate, Kent, UK',
+    eta: '9 min',
+    distance: '3.2 mi',
+  },
 ];
 
 const formatFileSize = (bytes: number) => {
@@ -84,6 +104,10 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   const [volume, setVolume] = useState(80);
   const [activeDest, setActiveDest] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [mapQuery, setMapQuery] = useState(DESTINATIONS[0].query);
+  const [mapLabel, setMapLabel] = useState(DESTINATIONS[0].name);
+  const [mapStyle, setMapStyle] = useState<'dark' | 'satellite'>('dark');
+  const [mapFullscreen, setMapFullscreen] = useState(false);
 
   // Live Radio (KISS FM) & Local Audio shared HTMLAudioElement
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -490,65 +514,203 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Navigation */}
+      {/* Tab 2: Navigation with Dark-Themed Google Maps */}
       {activeTab === 'navigation' && (
-        <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-black/55 p-5 backdrop-blur-xl shadow-2xl">
+        <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-black/55 p-4 backdrop-blur-xl shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-white">
                 <Navigation className="h-4 w-4" />
               </div>
-              <div>
-                <h2 className="text-sm font-semibold tracking-wide text-white">Navigation</h2>
-                <p className="text-xs text-zinc-400">
-                  {DESTINATIONS[activeDest].eta} • {DESTINATIONS[activeDest].distance}
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold tracking-wide text-white">Navigation</h2>
+                <p className="truncate text-[11px] text-zinc-400">
+                  {mapLabel} • {DESTINATIONS[activeDest]?.eta ?? 'Live'}
                 </p>
               </div>
             </div>
-            <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-200 border border-white/10">
-              Fastest Route
-            </span>
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapQuery)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-black shadow-sm hover:bg-zinc-200 transition"
+              title="Open turn-by-turn directions in Google Maps"
+            >
+              <span>Start GPS</span>
+              <ExternalLink className="h-3 w-3" />
+            </a>
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search destination..."
-              className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-xs text-white placeholder-zinc-500 outline-none focus:border-white/30 focus:bg-white/10 transition"
+          {/* Search Destination Form */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const trimmed = searchQuery.trim();
+              if (!trimmed) return;
+              setMapQuery(trimmed);
+              setMapLabel(trimmed);
+            }}
+            className="relative flex items-center gap-1.5"
+          >
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search postcode or place..."
+                className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-8 pr-3 text-xs text-white placeholder-zinc-500 outline-none focus:border-white/30 focus:bg-white/10 transition"
+              />
+            </div>
+            <button
+              type="submit"
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+            >
+              Go
+            </button>
+          </form>
+
+          {/* Dark-Themed Embedded Google Map */}
+          <div className="relative h-44 w-full overflow-hidden rounded-2xl border border-white/15 bg-zinc-950 shadow-inner">
+            <iframe
+              title="Google Maps Navigation"
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=${mapStyle === 'satellite' ? 'k' : ''}&z=14&ie=UTF8&iwloc=&output=embed`}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              className="h-full w-full border-0"
+              style={
+                mapStyle === 'dark'
+                  ? {
+                      filter:
+                        'invert(92%) hue-rotate(180deg) brightness(90%) contrast(96%) saturate(70%)',
+                    }
+                  : {
+                      filter: 'brightness(88%) contrast(106%) saturate(90%)',
+                    }
+              }
             />
+            {/* Subtle dark studio edge vignette */}
+            <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10 shadow-[inset_0_0_24px_rgba(0,0,0,0.65)]" />
+
+            {/* Floating Map Controls (Dark/Satellite + Fullscreen) */}
+            <div className="absolute right-2 top-2 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setMapStyle((s) => (s === 'dark' ? 'satellite' : 'dark'))}
+                className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-black/75 px-2 py-1 text-[10px] font-semibold text-zinc-100 backdrop-blur-md hover:bg-black transition cursor-pointer"
+                title="Switch Dark / Satellite map"
+              >
+                <Layers className="h-3 w-3" />
+                <span>{mapStyle === 'dark' ? 'Dark' : 'Sat'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapFullscreen(true)}
+                className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/15 bg-black/75 text-white backdrop-blur-md hover:bg-black transition cursor-pointer"
+                aria-label="Expand map fullscreen"
+                title="Fullscreen Map"
+              >
+                <Maximize2 className="h-3 w-3" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          {/* Quick Local Presets (Westwood Cross / Margate, Kent) */}
+          <div className="flex flex-col gap-1.5">
             {filteredDests.map((dest) => {
               const idx = DESTINATIONS.indexOf(dest);
-              const isSelected = idx === activeDest;
+              const isSelected = mapQuery === dest.query;
               return (
                 <button
                   key={dest.name}
-                  onClick={() => setActiveDest(idx)}
-                  className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-left transition cursor-pointer ${
+                  type="button"
+                  onClick={() => {
+                    setActiveDest(idx);
+                    setMapQuery(dest.query);
+                    setMapLabel(dest.name);
+                  }}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2 text-left transition cursor-pointer ${
                     isSelected
                       ? 'bg-white/12 border border-white/25 text-white'
                       : 'bg-white/[0.04] border border-transparent text-zinc-300 hover:bg-white/10'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <MapPin className={`h-4 w-4 ${isSelected ? 'text-white' : 'text-zinc-500'}`} />
-                    <div>
-                      <div className="text-xs font-semibold">{dest.name}</div>
-                      <div className="text-[11px] text-zinc-400">{dest.address}</div>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MapPin className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-zinc-500'}`} />
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold">{dest.name}</div>
+                      <div className="truncate text-[10px] text-zinc-400">{dest.address}</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xs font-medium text-white">{dest.eta}</div>
-                    <div className="text-[11px] text-zinc-500">{dest.distance}</div>
+                  <div className="text-right shrink-0 ml-2">
+                    <div className="text-[11px] font-medium text-white">{dest.eta}</div>
+                    <div className="text-[10px] text-zinc-500">{dest.distance}</div>
                   </div>
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Dark Google Maps Overlay */}
+      {mapFullscreen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/95 p-4 backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
+                <Navigation className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold text-white">{mapLabel}</div>
+                <div className="truncate text-[11px] text-zinc-400">{mapQuery}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setMapStyle((s) => (s === 'dark' ? 'satellite' : 'dark'))}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+              >
+                <Layers className="h-3.5 w-3.5" />
+                <span>{mapStyle === 'dark' ? 'Dark Mode' : 'Satellite'}</span>
+              </button>
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapQuery)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-black hover:bg-zinc-200 transition"
+              >
+                <span>Start GPS</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setMapFullscreen(false)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+          <div className="relative flex-1 overflow-hidden rounded-2xl border border-white/15 bg-zinc-950 shadow-2xl">
+            <iframe
+              title="Google Maps Fullscreen"
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=${mapStyle === 'satellite' ? 'k' : ''}&z=14&ie=UTF8&iwloc=&output=embed`}
+              referrerPolicy="no-referrer-when-downgrade"
+              className="h-full w-full border-0"
+              style={
+                mapStyle === 'dark'
+                  ? {
+                      filter:
+                        'invert(92%) hue-rotate(180deg) brightness(90%) contrast(96%) saturate(70%)',
+                    }
+                  : {
+                      filter: 'brightness(88%) contrast(106%) saturate(90%)',
+                    }
+              }
+            />
           </div>
         </div>
       )}
