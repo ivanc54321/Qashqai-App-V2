@@ -27,8 +27,8 @@ const CAMERA_PRESETS: Record<CameraPreset, CameraPresetConfig> = {
     label: 'Overview',
   },
   navigation: {
-    position: [0.35, 6.2, 2.75],
-    target: [0, 0.3, 0.15],
+    position: [0, 8.2, -3.6],
+    target: [0, 0.25, 0.35],
     autoRotate: false,
     label: 'Navigation',
   },
@@ -423,7 +423,7 @@ export const CarScene: React.FC<CarSceneProps> = ({
     controls.dampingFactor = 0.055;
     controls.enablePan = false;
     controls.minDistance = 2.2;
-    controls.maxDistance = 9.5;
+    controls.maxDistance = 12.0;
     controls.maxPolarAngle = Math.PI / 2 - 0.025;
     controls.minPolarAngle = 0.12;
     controls.target.set(...CAMERA_PRESETS.overview.target);
