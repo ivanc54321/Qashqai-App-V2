@@ -16,6 +16,7 @@ export function App() {
   });
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('overview');
   const [presetTrigger, setPresetTrigger] = useState<number>(0);
+  const [menuCollapsed, setMenuCollapsed] = useState<boolean>(false);
 
   const handleSelectCameraPreset = useCallback((preset: CameraPreset) => {
     setCameraPreset(preset);
@@ -50,16 +51,23 @@ export function App() {
             onToggleHotspot={handleToggleHotspot}
             cameraPreset={cameraPreset}
             presetTrigger={presetTrigger}
+            menuCollapsed={menuCollapsed}
           />
         </section>
 
         {/* Right-Hand Floating Menu Overlay */}
-        <section className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full max-w-[400px] flex-col justify-center p-4 lg:p-6">
+        <section
+          className={`pointer-events-none absolute inset-y-0 right-0 z-20 flex flex-col justify-center p-4 lg:p-6 transition-all duration-300 ${
+            menuCollapsed ? 'w-auto' : 'w-full max-w-[400px]'
+          }`}
+        >
           <div className="pointer-events-auto max-h-full overflow-y-auto">
             <MenuStrip
               hotspotState={hotspotState}
               onToggleHotspot={handleToggleHotspot}
               onSelectCameraPreset={handleSelectCameraPreset}
+              isCollapsed={menuCollapsed}
+              onToggleCollapse={() => setMenuCollapsed((c) => !c)}
             />
           </div>
         </section>

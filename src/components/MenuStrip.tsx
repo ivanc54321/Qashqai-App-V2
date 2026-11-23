@@ -30,6 +30,8 @@ import {
   Loader2,
   ExternalLink,
   Layers,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import type { CarHotspotState, CameraPreset } from './CarScene';
 
@@ -37,6 +39,8 @@ interface MenuStripProps {
   hotspotState: CarHotspotState;
   onToggleHotspot: (key: keyof CarHotspotState) => void;
   onSelectCameraPreset: (preset: CameraPreset) => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 type TabKey = 'overview' | 'navigation' | 'media';
@@ -97,6 +101,8 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   hotspotState,
   onToggleHotspot,
   onSelectCameraPreset,
+  isCollapsed,
+  onToggleCollapse,
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
@@ -358,27 +364,133 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
 
   return (
     <aside className="flex w-full flex-col gap-3 text-zinc-100">
-      {/* Persistent Top Status Bar + UK Plate Header */}
-      <div className="flex flex-col gap-2.5 rounded-2xl border border-white/10 bg-black/60 px-4 py-3 backdrop-blur-xl shadow-2xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[11px] font-bold text-white border border-white/15">
-              P
-            </span>
-            <span className="text-[11px] font-semibold tracking-widest text-zinc-300">READY</span>
-          </div>
-          <div className="flex items-center gap-3.5 text-xs text-zinc-300">
-            <span className="flex items-center gap-1.5" title="Diesel Fuel">
-              <Fuel className="h-3.5 w-3.5 text-zinc-200" />
-              <span className="font-medium text-white">76%</span>
-              <span className="text-zinc-400">• 410 mi</span>
-            </span>
-            <span className="flex items-center gap-1 text-zinc-300">
-              <Clock className="h-3.5 w-3.5 text-zinc-400" />
-              <span className="font-medium text-white">{timeStr || '12:16'}</span>
-            </span>
-          </div>
+      {/* Minimized Vertical Glass Icon Dock */}
+      {isCollapsed && (
+        <div className="flex flex-col items-center gap-2 rounded-3xl border border-white/10 bg-black/60 p-2 backdrop-blur-xl shadow-2xl">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-black shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+            aria-label="Expand menu"
+            title="Expand Menu"
+          >
+            <PanelRightOpen className="h-4 w-4" />
+          </button>
+
+          <div className="h-px w-7 bg-white/10 my-0.5" />
+
+          {/* Tab Icons (tap to expand directly to that tab + glide camera) */}
+          {(
+            [
+              { key: 'overview', label: 'Overview', Icon: Car },
+              { key: 'navigation', label: 'Navigation', Icon: Navigation },
+              { key: 'media', label: 'Media', Icon: Radio },
+            ] as const
+          ).map(({ key, label, Icon }) => {
+            const isActive = activeTab === key;
+            const showLiveDot = key === 'media' && activeAudioSource === 'radio' && radioStatus === 'playing';
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setActiveTab(key);
+                  onSelectCameraPreset(key);
+                  onToggleCollapse();
+                }}
+                className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border transition cursor-pointer ${
+                  isActive
+                    ? 'border-white/30 bg-white/15 text-white'
+                    : 'border-transparent bg-white/[0.04] text-zinc-400 hover:bg-white/10 hover:text-white'
+                }`}
+                aria-label={`Open ${label}`}
+                title={label}
+              >
+                <Icon className="h-4 w-4" />
+                {showLiveDot && (
+                  <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                )}
+              </button>
+            );
+          })}
+
+          <div className="h-px w-7 bg-white/10 my-0.5" />
+
+          {/* Quick Car Controls (toggle unobstructed without forcing menu open) */}
+          <button
+            type="button"
+            onClick={() => onToggleHotspot('headlights')}
+            className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition cursor-pointer ${
+              hotspotState.headlights
+                ? 'border-white/35 bg-white/15 text-white'
+                : 'border-transparent bg-white/[0.04] text-zinc-400 hover:bg-white/10 hover:text-white'
+            }`}
+            aria-label="Toggle Lights"
+            title="Lights"
+          >
+            <Lightbulb className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleHotspot('doorsOpen')}
+            className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition cursor-pointer ${
+              hotspotState.doorsOpen
+                ? 'border-white/35 bg-white/15 text-white'
+                : 'border-transparent bg-white/[0.04] text-zinc-400 hover:bg-white/10 hover:text-white'
+            }`}
+            aria-label="Toggle Doors"
+            title="Doors"
+          >
+            <DoorOpen className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleHotspot('trunkOpen')}
+            className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition cursor-pointer ${
+              hotspotState.trunkOpen
+                ? 'border-white/35 bg-white/15 text-white'
+                : 'border-transparent bg-white/[0.04] text-zinc-400 hover:bg-white/10 hover:text-white'
+            }`}
+            aria-label="Toggle Trunk"
+            title="Trunk"
+          >
+            <PackageOpen className="h-4 w-4" />
+          </button>
         </div>
+      )}
+
+      {/* Full Expanded Menu (kept mounted via CSS hidden so audio/maps state persists seamlessly) */}
+      <div className={isCollapsed ? 'hidden' : 'flex w-full flex-col gap-3'}>
+        {/* Persistent Top Status Bar + UK Plate Header */}
+        <div className="flex flex-col gap-2.5 rounded-2xl border border-white/10 bg-black/60 px-4 py-3 backdrop-blur-xl shadow-2xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[11px] font-bold text-white border border-white/15">
+                P
+              </span>
+              <span className="text-[11px] font-semibold tracking-widest text-zinc-300">READY</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs text-zinc-300">
+              <span className="flex items-center gap-1.5" title="Diesel Fuel">
+                <Fuel className="h-3.5 w-3.5 text-zinc-200" />
+                <span className="font-medium text-white">76%</span>
+                <span className="text-zinc-400">• 410 mi</span>
+              </span>
+              <span className="flex items-center gap-1 text-zinc-300">
+                <Clock className="h-3.5 w-3.5 text-zinc-400" />
+                <span className="font-medium text-white">{timeStr || '12:16'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-zinc-300 hover:bg-white/15 hover:text-white transition cursor-pointer"
+                aria-label="Minimize menu to icons"
+                title="Minimize to Icons"
+              >
+                <PanelRightClose className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
 
         {/* UK Number Plate + Model Title */}
         <div className="flex items-center justify-between border-t border-white/10 pt-2.5">
@@ -1166,6 +1278,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
           <PackageOpen className="h-4 w-4" />
           <span className="text-xs font-medium">Trunk</span>
         </button>
+      </div>
       </div>
     </aside>
   );

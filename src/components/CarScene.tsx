@@ -63,6 +63,7 @@ interface CarSceneProps {
   onToggleHotspot: (key: keyof CarHotspotState) => void;
   cameraPreset: CameraPreset;
   presetTrigger: number;
+  menuCollapsed: boolean;
 }
 
 declare global {
@@ -303,10 +304,13 @@ export const CarScene: React.FC<CarSceneProps> = ({
   hotspotState,
   cameraPreset,
   presetTrigger,
+  menuCollapsed,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<CarHotspotState>(hotspotState);
   const presetRef = useRef<CameraPreset>(cameraPreset);
+  const menuCollapsedRef = useRef<boolean>(menuCollapsed);
+  const applyOffsetRef = useRef<(() => void) | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const transitionRef = useRef<CameraTransition>({
@@ -351,6 +355,11 @@ export const CarScene: React.FC<CarSceneProps> = ({
   }, [hotspotState]);
 
   useEffect(() => {
+    menuCollapsedRef.current = menuCollapsed;
+    applyOffsetRef.current?.();
+  }, [menuCollapsed]);
+
+  useEffect(() => {
     presetRef.current = cameraPreset;
     presetTriggerRef.current = presetTrigger;
     if (presetTrigger === 0) return;
@@ -392,13 +401,14 @@ export const CarScene: React.FC<CarSceneProps> = ({
       const h = container.clientHeight;
       camera.aspect = w / h;
       if (w >= 900) {
-        // Position the Qashqai prominently in the lower-left quadrant
-        camera.setViewOffset(w, h, w * 0.2, -h * 0.05, w, h);
+        const xOffset = menuCollapsedRef.current ? w * 0.03 : w * 0.2;
+        camera.setViewOffset(w, h, xOffset, -h * 0.05, w, h);
       } else {
         camera.clearViewOffset();
       }
       camera.updateProjectionMatrix();
     };
+    applyOffsetRef.current = applyCameraOffset;
     applyCameraOffset();
 
     const renderer = new THREE.WebGLRenderer({
