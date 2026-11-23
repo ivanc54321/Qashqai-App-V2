@@ -107,9 +107,9 @@ export const MenuStrip: React.FC<MenuStripProps> = ({ hotspotState, onToggleHots
   );
 
   return (
-    <aside className="flex h-full w-full flex-col gap-4 p-6 text-slate-100 overflow-y-auto">
+    <aside className="flex w-full flex-col gap-3.5 text-slate-100">
       {/* Top Status Strip */}
-      <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/45 px-5 py-3 backdrop-blur-xl shadow-lg">
+      <div className="flex items-center justify-between rounded-2xl border border-white/12 bg-slate-950/45 px-5 py-3 backdrop-blur-xl shadow-lg">
         <div className="flex items-center gap-3">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-xs font-bold text-cyan-300 border border-cyan-400/30">
             P

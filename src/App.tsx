@@ -30,18 +30,19 @@ export function App() {
       </video>
 
       {/* Subtle dark vignette overlay for contrast */}
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-r from-slate-950/35 via-slate-950/20 to-slate-950/65" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-r from-slate-950/25 via-slate-950/15 to-slate-950/55" />
 
-      {/* Main 60/40 Split Layout */}
-      <main className="relative z-10 flex h-full w-full flex-col lg:flex-row">
-        {/* Left ~60% Stage: Rotating 3D Car */}
-        <section className="h-[50vh] w-full lg:h-full lg:w-[60%]">
+      {/* Full-Bleed 3D Car Stage */}
+      <main className="relative z-10 h-full w-full">
+        <section className="absolute inset-0 z-10">
           <CarScene hotspotState={hotspotState} onToggleHotspot={handleToggleHotspot} />
         </section>
 
-        {/* Right ~40% Menu Strip Dashboard */}
-        <section className="h-[50vh] w-full lg:h-full lg:w-[40%] border-t lg:border-t-0 lg:border-l border-white/10 bg-slate-950/25 backdrop-blur-sm">
-          <MenuStrip hotspotState={hotspotState} onToggleHotspot={handleToggleHotspot} />
+        {/* Right-Hand Floating Menu Overlay */}
+        <section className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full max-w-[420px] flex-col justify-center p-4 lg:p-6">
+          <div className="pointer-events-auto max-h-full overflow-y-auto">
+            <MenuStrip hotspotState={hotspotState} onToggleHotspot={handleToggleHotspot} />
+          </div>
         </section>
       </main>
     </div>

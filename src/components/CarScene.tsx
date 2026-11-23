@@ -35,6 +35,20 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState, onToggleHotspo
     );
     camera.position.set(5.2, 2.3, 5.4);
 
+    const applyCameraOffset = () => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      if (w >= 1024) {
+        // Shift frustum right by 16% so the 3D car sits left-of-center (~34% X)
+        camera.setViewOffset(w, h, w * 0.16, 0, w, h);
+      } else {
+        camera.clearViewOffset();
+      }
+      camera.updateProjectionMatrix();
+    };
+    applyCameraOffset();
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -273,8 +287,7 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState, onToggleHotspo
     // Resize handler
     const handleResize = () => {
       if (!container) return;
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
+      applyCameraOffset();
       renderer.setSize(container.clientWidth, container.clientHeight);
     };
     window.addEventListener('resize', handleResize);
