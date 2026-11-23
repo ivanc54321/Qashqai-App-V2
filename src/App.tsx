@@ -17,24 +17,13 @@ export function App() {
   }, []);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-slate-950 font-sans select-none">
-      {/* Full-bleed 4K Video Background */}
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="pointer-events-none fixed inset-0 h-full w-full object-cover"
-      >
-        <source src="./background.mp4" type="video/mp4" />
-      </video>
-
-      {/* Dark studio spotlight atmosphere matching reference image */}
+    <div className="relative h-screen w-screen overflow-hidden bg-black font-sans select-none">
+      {/* Pure dark studio spotlight atmosphere (no background video car) */}
       <div
         className="pointer-events-none fixed inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 55% 65% at 32% 18%, rgba(203, 213, 225, 0.16) 0%, rgba(15, 23, 42, 0.25) 42%, rgba(0, 0, 0, 0.88) 78%, rgba(0, 0, 0, 0.96) 100%)',
+            'radial-gradient(ellipse 52% 62% at 32% 16%, rgba(186, 210, 235, 0.16) 0%, rgba(15, 23, 42, 0.22) 42%, rgba(2, 3, 5, 0.92) 78%, #000000 100%)',
         }}
       />
 
