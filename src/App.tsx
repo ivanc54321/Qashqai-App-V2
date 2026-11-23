@@ -29,8 +29,14 @@ export function App() {
         <source src="./background.mp4" type="video/mp4" />
       </video>
 
-      {/* Subtle dark vignette overlay for contrast */}
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-r from-slate-950/25 via-slate-950/15 to-slate-950/55" />
+      {/* Dark studio spotlight atmosphere matching reference image */}
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 55% 65% at 32% 18%, rgba(203, 213, 225, 0.16) 0%, rgba(15, 23, 42, 0.25) 42%, rgba(0, 0, 0, 0.88) 78%, rgba(0, 0, 0, 0.96) 100%)',
+        }}
+      />
 
       {/* Full-Bleed 3D Car Stage */}
       <main className="relative z-10 h-full w-full">
@@ -39,7 +45,7 @@ export function App() {
         </section>
 
         {/* Right-Hand Floating Menu Overlay */}
-        <section className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full max-w-[420px] flex-col justify-center p-4 lg:p-6">
+        <section className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-full max-w-[400px] flex-col justify-center p-4 lg:p-6">
           <div className="pointer-events-auto max-h-full overflow-y-auto">
             <MenuStrip hotspotState={hotspotState} onToggleHotspot={handleToggleHotspot} />
           </div>
