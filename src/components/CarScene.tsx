@@ -105,7 +105,7 @@ function createHeadlightGlowTexture(): THREE.CanvasTexture {
 
 /**
  * Generates an authentic UK number plate texture (white for front, yellow for rear)
- * sized 1024x1024 to match the Qashqai FBX mingpai UV layout cleanly.
+ * aligned to the exact UV band of the Qashqai FBX plate meshes (u: 0.003..0.997, v: 0.329..0.658).
  */
 function createUKPlateTexture(text: string, variant: 'front' | 'rear'): THREE.CanvasTexture {
   const size = 1024;
@@ -114,21 +114,41 @@ function createUKPlateTexture(text: string, variant: 'front' | 'rear'): THREE.Ca
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  const bgColor = variant === 'front' ? '#f8fafc' : '#facc15';
+  // Fill entire canvas with plate base color so beveled edges match seamlessly
+  const bgColor = variant === 'front' ? '#f8fafc' : '#f5c518';
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, size, size);
 
-  // Subtle realistic reflective plate border
-  ctx.strokeStyle = 'rgba(15, 23, 42, 0.22)';
-  ctx.lineWidth = 10;
-  ctx.strokeRect(18, 220, size - 36, size - 440);
+  // Visible front/rear plate face lies at y = 350..687 (height 337px)
+  const top = 352;
+  const height = 334;
+  const centerY = top + height / 2;
 
-  // Authentic UK bold condensed Charles Wright-style plate lettering
+  // Subtle vertical acrylic sheen gradient
+  const sheen = ctx.createLinearGradient(0, top, 0, top + height);
+  sheen.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
+  sheen.addColorStop(0.5, 'rgba(255, 255, 255, 0.0)');
+  sheen.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(0, top, size, height);
+
+  // Crisp outer plate border
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.55)';
+  ctx.lineWidth = 10;
+  ctx.strokeRect(14, top + 8, size - 28, height - 16);
+
+  // Authentic UK bold condensed Charles Wright-style plate lettering (~70% of plate height)
   ctx.fillStyle = '#09090b';
-  ctx.font = '900 178px "Arial Narrow", "Impact", "Helvetica Neue", sans-serif';
+  ctx.font = '900 225px "Arial Narrow", "Impact", "Helvetica Neue", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, size / 2, size / 2 + 8);
+  ctx.fillText(text, size / 2, centerY + 10);
+
+  // Tiny subtle BS AU 145e mark in bottom-right corner for realism
+  ctx.fillStyle = 'rgba(9, 9, 11, 0.45)';
+  ctx.font = '600 18px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('BS AU 145e', size - 30, top + height - 22);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -304,7 +324,7 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
     const resolveTextureUrl = (rawUrl: string): string => {
-      if (rawUrl.startsWith('data:')) return rawUrl;
+      if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
       const base = rawUrl.split(/[\\/]/).pop() || '';
       const key = base.toLowerCase();
       if (key === 'mingpai.jpg' || key === 'mingpai.jpeg' || key === 'mingpai.png') {
@@ -369,20 +389,28 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
     });
 
     const frontPlateMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
       map: frontPlateTex,
+      emissive: new THREE.Color(0xffffff),
+      emissiveMap: frontPlateTex,
+      emissiveIntensity: 0.28,
       roughness: 0.22,
-      metalness: 0.08,
-      clearcoat: 0.75,
-      clearcoatRoughness: 0.12,
-      envMapIntensity: 1.1,
+      metalness: 0.05,
+      clearcoat: 0.8,
+      clearcoatRoughness: 0.1,
+      envMapIntensity: 0.9,
     });
     const rearPlateMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
       map: rearPlateTex,
+      emissive: new THREE.Color(0xffffff),
+      emissiveMap: rearPlateTex,
+      emissiveIntensity: 0.28,
       roughness: 0.22,
-      metalness: 0.08,
-      clearcoat: 0.75,
-      clearcoatRoughness: 0.12,
-      envMapIntensity: 1.1,
+      metalness: 0.05,
+      clearcoat: 0.8,
+      clearcoatRoughness: 0.1,
+      envMapIntensity: 0.9,
     });
 
     const loader = new FBXLoader(manager);
@@ -428,7 +456,11 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
         const isLightMesh =
           meshName.includes('light_tex') || meshName.includes('f_glass') || meshName.includes('light_glass');
         const isPlateMesh =
-          meshName.includes('mingpai') || meshName.includes('chepai') || meshName.includes('plate');
+          meshName.includes('paizi') ||
+          meshName.includes('1326') ||
+          meshName.includes('material_928') ||
+          meshName.includes('mingpai') ||
+          meshName.includes('plate');
 
         const meshBox = new THREE.Box3().setFromObject(child);
         const meshCenter = new THREE.Vector3();
@@ -444,9 +476,10 @@ export const CarScene: React.FC<CarSceneProps> = ({ hotspotState }) => {
           const mapName = (srcMap?.name || '').toLowerCase();
           const mapSrc = ((srcMap?.image as HTMLImageElement | undefined)?.src || '');
 
-          // 0. UK Number Plates (WG62 HJC): White front, Yellow rear
+          // 0. UK Number Plates (WG62 HJC): White front (z >= 0), Yellow rear (z < 0)
           if (
             isPlateMesh ||
+            matName.includes('material__2255') ||
             matName.includes('mingpai') ||
             matName.includes('plate') ||
             mapName.includes('mingpai') ||
