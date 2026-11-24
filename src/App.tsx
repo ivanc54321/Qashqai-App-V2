@@ -25,6 +25,7 @@ import {
 import { CarScene, type CarHotspotState, type CameraPreset, type LayoutMode } from './components/CarScene';
 import { MenuStrip, type TabKey, type MediaMode } from './components/MenuStrip';
 import { VoiceAssistantOverlay } from './components/VoiceAssistantOverlay';
+import { MobileLandingOverlay } from './components/MobileLandingOverlay';
 import type { CabinCamControlApi } from './components/CabinCamPanel';
 import type { DetectedGesture } from './utils/cabinVision';
 import {
@@ -63,13 +64,18 @@ function detectLayoutMode(): LayoutMode {
 
 export function App() {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(detectLayoutMode);
+  const [showMobileLanding, setShowMobileLanding] = useState<boolean>(
+    () => detectLayoutMode() !== 'horizontal-tablet'
+  );
   const [hotspotState, setHotspotState] = useState<CarHotspotState>({
     headlights: true,
     doorsOpen: false,
     trunkOpen: false,
   });
   const [activeTab, setActiveTab] = useState<TabKey>('navigation');
-  const [cameraPreset, setCameraPreset] = useState<CameraPreset>('navigation');
+  const [cameraPreset, setCameraPreset] = useState<CameraPreset>(() =>
+    detectLayoutMode() !== 'horizontal-tablet' ? 'landing' : 'navigation'
+  );
   const [presetTrigger, setPresetTrigger] = useState<number>(1);
   const [menuCollapsed, setMenuCollapsed] = useState<boolean>(false);
 
@@ -165,7 +171,14 @@ export function App() {
 
   // Update layout mode on window resize or device orientation change
   useEffect(() => {
-    const handleResize = () => setLayoutMode(detectLayoutMode());
+    const handleResize = () => {
+      const next = detectLayoutMode();
+      setLayoutMode(next);
+      if (next === 'horizontal-tablet') {
+        setShowMobileLanding(false);
+        setCameraPreset((prev) => (prev === 'landing' ? 'navigation' : prev));
+      }
+    };
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     return () => {
@@ -362,21 +375,23 @@ export function App() {
       {/* Full-Bleed 3D Car Stage */}
       <main
         className={`relative z-10 h-full w-full ${
-          layoutMode === 'horizontal-mobile'
-            ? 'pb-11'
-            : layoutMode === 'vertical-mobile'
-              ? 'pb-12'
-              : 'pb-14'
+          showMobileLanding
+            ? 'pb-0'
+            : layoutMode === 'horizontal-mobile'
+              ? 'pb-11'
+              : layoutMode === 'vertical-mobile'
+                ? 'pb-12'
+                : 'pb-14'
         }`}
       >
         <section className="absolute inset-0 z-10">
           <CarScene
             hotspotState={hotspotState}
             onToggleHotspot={handleToggleHotspot}
-            cameraPreset={cameraPreset}
+            cameraPreset={showMobileLanding ? 'landing' : cameraPreset}
             presetTrigger={presetTrigger}
             menuCollapsed={menuCollapsed}
-            showLaneLines={showLaneLines}
+            showLaneLines={showLaneLines && !showMobileLanding}
             layoutMode={layoutMode}
           />
         </section>
@@ -384,6 +399,8 @@ export function App() {
         {/* Driving HUD Overlay (P R N D, Speedometer, Drive Mode, Speed Camera Radar & Reverse Assist) */}
         <section
           className={`pointer-events-none absolute top-0 left-0 z-20 flex flex-col items-center transition-all duration-300 ${
+            showMobileLanding ? 'hidden' : ''
+          } ${
             layoutMode === 'vertical-mobile'
               ? 'w-full pt-2 px-3'
               : layoutMode === 'horizontal-mobile'
@@ -608,6 +625,8 @@ export function App() {
         {/* Infotainment Panel (Split-screen right on landscape, bottom 62% on portrait, or compact icon dock) */}
         <section
           className={`pointer-events-none absolute z-20 flex flex-col transition-all duration-300 ${
+            showMobileLanding ? 'hidden' : ''
+          } ${
             layoutMode === 'vertical-mobile'
               ? menuCollapsed
                 ? 'bottom-12 right-0 w-auto justify-end p-2'
@@ -798,9 +817,27 @@ export function App() {
         }}
       />
 
+      {/* Mobile Visual Landing Screen (Vertical & Horizontal Mobile on Launch) */}
+      {showMobileLanding && (
+        <MobileLandingOverlay
+          layoutMode={layoutMode}
+          onStart={() => {
+            setShowMobileLanding(false);
+            setCameraPreset('navigation');
+            setPresetTrigger((n) => n + 1);
+          }}
+          onOpenAbout={() => {
+            setShowMobileLanding(false);
+            handleSelectTab('about');
+          }}
+        />
+      )}
+
       {/* Bottom Tesla-Style Infotainment Dock Bar */}
       <footer
         className={`fixed inset-x-0 bottom-0 z-30 flex items-center justify-between border-t border-white/10 bg-black/85 backdrop-blur-xl text-zinc-200 ${
+          showMobileLanding ? 'hidden' : ''
+        } ${
           layoutMode === 'horizontal-mobile'
             ? 'h-11 px-2.5'
             : layoutMode === 'vertical-mobile'

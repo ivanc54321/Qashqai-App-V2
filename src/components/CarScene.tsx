@@ -10,7 +10,14 @@ export interface CarHotspotState {
   trunkOpen: boolean;
 }
 
-export type CameraPreset = 'overview' | 'navigation' | 'media' | 'lights' | 'doors' | 'trunk';
+export type CameraPreset =
+  | 'landing'
+  | 'overview'
+  | 'navigation'
+  | 'media'
+  | 'lights'
+  | 'doors'
+  | 'trunk';
 export type LayoutMode = 'horizontal-tablet' | 'horizontal-mobile' | 'vertical-mobile';
 
 interface CameraPresetConfig {
@@ -21,6 +28,12 @@ interface CameraPresetConfig {
 }
 
 const CAMERA_PRESETS: Record<CameraPreset, CameraPresetConfig> = {
+  landing: {
+    position: [0, 14.2, 0.9],
+    target: [0, 0.2, 0.05],
+    autoRotate: false,
+    label: 'Landing',
+  },
   overview: {
     position: [4.1, 1.52, 4.65],
     target: [0, 0.65, 0],
@@ -413,8 +426,9 @@ export const CarScene: React.FC<CarSceneProps> = ({
   useEffect(() => {
     menuCollapsedRef.current = menuCollapsed;
     layoutModeRef.current = layoutMode;
+    presetRef.current = cameraPreset;
     applyOffsetRef.current?.();
-  }, [menuCollapsed, layoutMode]);
+  }, [menuCollapsed, layoutMode, cameraPreset]);
 
   useEffect(() => {
     presetRef.current = cameraPreset;
@@ -459,7 +473,13 @@ export const CarScene: React.FC<CarSceneProps> = ({
       const h = container.clientHeight;
       camera.aspect = w / h;
       const mode = layoutModeRef.current;
-      if (menuCollapsedRef.current) {
+      if (presetRef.current === 'landing') {
+        if (mode === 'vertical-mobile') {
+          camera.setViewOffset(w, h, 0, -h * 0.04, w, h);
+        } else {
+          camera.clearViewOffset();
+        }
+      } else if (menuCollapsedRef.current) {
         camera.clearViewOffset();
       } else if (mode === 'vertical-mobile') {
         // Shift 3D car into the top 38% stage above the bottom 62% panel
@@ -496,7 +516,7 @@ export const CarScene: React.FC<CarSceneProps> = ({
     controls.dampingFactor = 0.055;
     controls.enablePan = false;
     controls.minDistance = 2.2;
-    controls.maxDistance = 12.0;
+    controls.maxDistance = 18.0;
     controls.maxPolarAngle = Math.PI / 2 - 0.025;
     controls.minPolarAngle = 0.12;
     controls.target.set(...initialCfg.target);
