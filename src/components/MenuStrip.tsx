@@ -41,6 +41,8 @@ import {
 } from 'lucide-react';
 import type { CarHotspotState, LayoutMode } from './CarScene';
 import type { ParkedPin } from '../App';
+import { CabinCamPanel, type CabinCamControlApi } from './CabinCamPanel';
+import type { DetectedGesture } from '../utils/cabinVision';
 import {
   RADIO_STATIONS,
   DESTINATIONS,
@@ -52,7 +54,7 @@ import {
 import type { SpeedCamera } from '../utils/speedCameras';
 import { loadMediaRecords, saveMediaRecords, deleteMediaRecord } from '../utils/mediaStore';
 
-export type TabKey = 'overview' | 'navigation' | 'media';
+export type TabKey = 'overview' | 'navigation' | 'media' | 'camera';
 
 interface MenuStripProps {
   activeTab: TabKey;
@@ -69,6 +71,7 @@ interface MenuStripProps {
   onRegisterJumpToCoords: (fn: (coords: string) => void) => void;
   onRegisterPlayStation?: (fn: (stationId: string) => void) => void;
   onRegisterNavigateTo?: (fn: (query: string, label?: string) => void) => void;
+  onRegisterSkipMedia?: (fn: (dir: 1 | -1) => string) => void;
   gpsCoords: string | null;
   isOverSpeed: boolean;
   nearestCamera: { camera: SpeedCamera; meters: number } | null;
@@ -76,6 +79,14 @@ interface MenuStripProps {
   parkedPin: ParkedPin | null;
   onSaveParkedPin: () => void;
   layoutMode?: LayoutMode;
+  gear: 'P' | 'R' | 'N' | 'D';
+  speedMph: number;
+  cabinCamActive: boolean;
+  onCabinCamActiveChange: (active: boolean) => void;
+  onCabinGesture: (gesture: DetectedGesture) => void;
+  onAutoNightDim: (dim: boolean) => void;
+  onFatigueAlert: () => void;
+  onRegisterCabinCamControl?: (api: CabinCamControlApi) => void;
 }
 
 type MediaMode = 'radio' | 'music' | 'videos';
@@ -111,6 +122,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   onRegisterJumpToCoords,
   onRegisterPlayStation,
   onRegisterNavigateTo,
+  onRegisterSkipMedia,
   gpsCoords,
   isOverSpeed,
   nearestCamera,
@@ -118,6 +130,14 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   parkedPin,
   onSaveParkedPin,
   layoutMode = 'horizontal-tablet',
+  gear,
+  speedMph,
+  cabinCamActive,
+  onCabinCamActiveChange,
+  onCabinGesture,
+  onAutoNightDim,
+  onFatigueAlert,
+  onRegisterCabinCamControl,
 }) => {
   const isCompact = layoutMode !== 'horizontal-tablet';
   const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
@@ -401,6 +421,30 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
     });
   }, [onRegisterPlayStation, handleToggleStation]);
 
+  useEffect(() => {
+    if (!onRegisterSkipMedia) return;
+    onRegisterSkipMedia((dir: 1 | -1) => {
+      if (activeAudioSource === 'local-music' && localTracks.length > 0) {
+        const nextIdx = (localTrackIndex + dir + localTracks.length) % localTracks.length;
+        playLocalTrack(nextIdx);
+        return localTracks[nextIdx]?.name ?? 'Next Track';
+      }
+      const currIdx = RADIO_STATIONS.findIndex((s) => s.id === activeStation.id);
+      const nextStation =
+        RADIO_STATIONS[(currIdx + dir + RADIO_STATIONS.length) % RADIO_STATIONS.length];
+      handleToggleStation(nextStation);
+      return nextStation.name;
+    });
+  }, [
+    onRegisterSkipMedia,
+    activeAudioSource,
+    localTracks,
+    localTrackIndex,
+    playLocalTrack,
+    activeStation,
+    handleToggleStation,
+  ]);
+
   const handleConnectObd = async () => {
     const navBt = (navigator as unknown as { bluetooth?: { requestDevice: (opts: unknown) => Promise<unknown> } }).bluetooth;
     if (!navBt) {
@@ -577,10 +621,13 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
               { key: 'overview', label: 'Overview', Icon: Car },
               { key: 'navigation', label: 'Navigation', Icon: Navigation },
               { key: 'media', label: 'Media', Icon: Radio },
+              { key: 'camera', label: 'Cabin Cam', Icon: Camera },
             ] as const
           ).map(({ key, label, Icon }) => {
             const isActive = activeTab === key;
-            const showLiveDot = key === 'media' && activeAudioSource === 'radio' && radioStatus === 'playing';
+            const showLiveDot =
+              (key === 'media' && activeAudioSource === 'radio' && radioStatus === 'playing') ||
+              (key === 'camera' && cabinCamActive);
             return (
               <button
                 key={key}
@@ -670,9 +717,10 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
           <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] p-0.5">
             {(
               [
-                { key: 'overview', label: 'Overview' },
-                { key: 'navigation', label: 'Navigation' },
+                { key: 'overview', label: isCompact ? 'Car' : 'Overview' },
+                { key: 'navigation', label: isCompact ? 'Nav' : 'Navigation' },
                 { key: 'media', label: 'Media' },
+                { key: 'camera', label: isCompact ? 'Cam' : 'Cabin Cam' },
               ] as { key: TabKey; label: string }[]
             ).map((tab) => {
               const active = activeTab === tab.key;
@@ -680,13 +728,16 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                 <button
                   key={tab.key}
                   onClick={() => onSelectTab(tab.key)}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                  className={`relative rounded-lg ${isCompact ? 'px-2 py-1' : 'px-2.5 py-1'} text-[11px] font-semibold transition cursor-pointer ${
                     active
                       ? 'bg-white text-black shadow-sm'
                       : 'text-zinc-400 hover:bg-white/10 hover:text-white'
                   }`}
                 >
                   {tab.label}
+                  {tab.key === 'camera' && cabinCamActive && (
+                    <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse align-middle" />
+                  )}
                 </button>
               );
             })}
@@ -1543,6 +1594,19 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
             </div>
           </div>
         )}
+
+        {/* Tab 4: Tablet Front Camera (Cabin Cam) — always mounted for background vision & loop recording */}
+        <CabinCamPanel
+          visible={activeTab === 'camera'}
+          gear={gear}
+          speedMph={speedMph}
+          onActiveChange={onCabinCamActiveChange}
+          onGestureDetected={onCabinGesture}
+          onAutoNightDim={onAutoNightDim}
+          onFatigueAlert={onFatigueAlert}
+          onRegisterControl={onRegisterCabinCamControl}
+          isCompact={isCompact}
+        />
 
         {/* Fullscreen Video Theater Overlay */}
         {videoFullscreen && currentLocalVideo && (

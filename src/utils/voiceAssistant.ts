@@ -37,6 +37,8 @@ export interface AssistantActions {
   selectTab: (tab: TabKey) => void;
   saveParkedPin: () => void;
   showParkedPin: () => void;
+  saveDashcamClip?: () => void;
+  setSentryMode?: (enabled: boolean) => void;
 }
 
 export interface AssistantResponse {
@@ -360,6 +362,23 @@ export async function processVoiceCommand(
   if (/(open|show|switch to)\s+(overview|car|obd|diagnostics|vehicle)/i.test(lower)) {
     actions.selectTab('overview');
     return { reply: 'Opening Vehicle Overview.', source: 'offline', actionBadge: 'Overview' };
+  }
+  if (/(open|show|switch to)\s+(cabin cam|cabin camera|front cam|front camera|dashcam|camera)/i.test(lower)) {
+    actions.selectTab('camera');
+    return { reply: 'Opening Cabin Cam.', source: 'offline', actionBadge: 'Cabin Cam' };
+  }
+  if (/(save|record)\s+(dashcam|clip|video|footage)/i.test(lower)) {
+    actions.saveDashcamClip?.();
+    return { reply: 'Saving dashcam clip to local storage.', source: 'offline', actionBadge: 'Clip Saved' };
+  }
+  if (/\bsentry\s*mode\b/i.test(lower)) {
+    const turnOff = /\b(off|disable|stop)\b/i.test(lower);
+    actions.setSentryMode?.(!turnOff);
+    return {
+      reply: turnOff ? 'Parked Sentry Mode disabled.' : 'Parked Sentry Mode enabled.',
+      source: 'offline',
+      actionBadge: turnOff ? 'Sentry Off' : 'Sentry On',
+    };
   }
 
   // 9. Speed Cameras, Live Telemetry & 2012 Qashqai J10 Specs

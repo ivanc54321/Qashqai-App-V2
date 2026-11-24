@@ -19,10 +19,14 @@ import {
   Pause,
   ParkingSquare,
   Mic,
+  Coffee,
+  Hand,
 } from 'lucide-react';
 import { CarScene, type CarHotspotState, type CameraPreset, type LayoutMode } from './components/CarScene';
 import { MenuStrip, type TabKey } from './components/MenuStrip';
 import { VoiceAssistantOverlay } from './components/VoiceAssistantOverlay';
+import type { CabinCamControlApi } from './components/CabinCamPanel';
+import type { DetectedGesture } from './utils/cabinVision';
 import {
   KENT_FALLBACK_CAMERAS,
   fetchNearbySpeedCameras,
@@ -112,6 +116,31 @@ export function App() {
   const jumpToParkedRef = useRef<((coords: string) => void) | null>(null);
   const playStationRef = useRef<((stationId: string) => void) | null>(null);
   const navigateToRef = useRef<((query: string, label?: string) => void) | null>(null);
+  const skipMediaRef = useRef<((dir: 1 | -1) => string) | null>(null);
+  const cabinCamApiRef = useRef<CabinCamControlApi | null>(null);
+
+  // Tablet Front Camera (Cabin Cam) state
+  const [cabinCamActive, setCabinCamActive] = useState<boolean>(false);
+  const [gestureToast, setGestureToast] = useState<string | null>(null);
+  const [fatigueBannerOpen, setFatigueBannerOpen] = useState<boolean>(false);
+  const gestureTimerRef = useRef<number | null>(null);
+
+  const handleCabinGesture = useCallback((gesture: DetectedGesture) => {
+    let message = '';
+    if (gesture === 'palm-hold') {
+      toggleMiniPlayRef.current?.();
+      message = 'Palm Hold → Play / Pause';
+    } else if (gesture === 'wave-right') {
+      const nextLabel = skipMediaRef.current?.(1) ?? 'Next';
+      message = `Wave Right → ${nextLabel}`;
+    } else {
+      const prevLabel = skipMediaRef.current?.(-1) ?? 'Previous';
+      message = `Wave Left → ${prevLabel}`;
+    }
+    setGestureToast(message);
+    if (gestureTimerRef.current !== null) window.clearTimeout(gestureTimerRef.current);
+    gestureTimerRef.current = window.setTimeout(() => setGestureToast(null), 2400);
+  }, []);
 
   // Voice AI Assistant state + radio volume ducking
   const [assistantOpen, setAssistantOpen] = useState<boolean>(false);
@@ -259,7 +288,7 @@ export function App() {
     (tab: TabKey) => {
       setActiveTab(tab);
       if (menuCollapsed) setMenuCollapsed(false);
-      handleSelectCameraPreset(tab);
+      handleSelectCameraPreset(tab === 'camera' ? 'overview' : tab);
     },
     [menuCollapsed, handleSelectCameraPreset]
   );
@@ -408,6 +437,18 @@ export function App() {
               >
                 {nightDim ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
               </button>
+              {cabinCamActive && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTab('camera')}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-400/40 bg-red-500/15 px-1.5 py-1 text-[10px] font-bold text-red-300 transition hover:bg-red-500/25 cursor-pointer"
+                  title="Cabin Cam Active"
+                  aria-label="Cabin Cam Live Indicator"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span>CAM</span>
+                </button>
+              )}
             </div>
 
             {/* P R N D Gear Selector */}
@@ -606,6 +647,9 @@ export function App() {
               onRegisterNavigateTo={(fn) => {
                 navigateToRef.current = fn;
               }}
+              onRegisterSkipMedia={(fn) => {
+                skipMediaRef.current = fn;
+              }}
               gpsCoords={gpsActive ? gpsCoords : null}
               isOverSpeed={isOverSpeed}
               nearestCamera={nearestCamera}
@@ -613,6 +657,16 @@ export function App() {
               parkedPin={parkedPin}
               onSaveParkedPin={saveParkedLocation}
               layoutMode={layoutMode}
+              gear={gear}
+              speedMph={displayedSpeed}
+              cabinCamActive={cabinCamActive}
+              onCabinCamActiveChange={setCabinCamActive}
+              onCabinGesture={handleCabinGesture}
+              onAutoNightDim={setNightDim}
+              onFatigueAlert={() => setFatigueBannerOpen(true)}
+              onRegisterCabinCamControl={(api) => {
+                cabinCamApiRef.current = api;
+              }}
             />
           </div>
         </section>
@@ -621,6 +675,42 @@ export function App() {
       {/* Auto Night Dimmer Overlay */}
       {nightDim && (
         <div className="pointer-events-none fixed inset-0 z-40 bg-black/40 transition-opacity duration-300" />
+      )}
+
+      {/* Touchless Hand-Wave Gesture Confirmation Pill */}
+      {gestureToast && (
+        <div className="pointer-events-none fixed top-4 left-1/2 z-50 -translate-x-1/2">
+          <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-black/85 px-4 py-2 text-xs font-semibold text-white shadow-2xl backdrop-blur-xl">
+            <Hand className="h-4 w-4 text-sky-400" />
+            <span>{gestureToast}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Driver Fatigue / Motorway Break Alert Banner */}
+      {fatigueBannerOpen && (
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 w-[92%] max-w-md">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-400/45 bg-zinc-950/95 px-4 py-3 text-white shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+                <Coffee className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-amber-200">Time for a Motorway Break?</div>
+                <div className="text-[11px] text-zinc-400">
+                  Prolonged stillness detected on Cabin Cam.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFatigueBannerOpen(false)}
+              className="shrink-0 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-black hover:bg-zinc-200 transition cursor-pointer"
+            >
+              I&apos;m Awake
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Google Assistant-Style Voice AI Overlay */}
@@ -691,6 +781,12 @@ export function App() {
               setMenuCollapsed(false);
               jumpToParkedRef.current?.(parkedPin.coords);
             }
+          },
+          saveDashcamClip: () => {
+            void cabinCamApiRef.current?.saveClip();
+          },
+          setSentryMode: (enabled) => {
+            cabinCamApiRef.current?.setSentryEnabled(enabled);
           },
         }}
       />
@@ -789,7 +885,7 @@ export function App() {
           <button
             type="button"
             onClick={() => handleSelectTab('overview')}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+            className={`flex ${layoutMode === 'vertical-mobile' ? 'h-8 w-8' : 'h-9 w-9'} items-center justify-center rounded-xl transition cursor-pointer ${
               activeTab === 'overview' && !menuCollapsed
                 ? 'bg-white text-black'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
@@ -802,7 +898,7 @@ export function App() {
           <button
             type="button"
             onClick={() => handleSelectTab('navigation')}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+            className={`flex ${layoutMode === 'vertical-mobile' ? 'h-8 w-8' : 'h-9 w-9'} items-center justify-center rounded-xl transition cursor-pointer ${
               activeTab === 'navigation' && !menuCollapsed
                 ? 'bg-white text-black'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
@@ -815,7 +911,7 @@ export function App() {
           <button
             type="button"
             onClick={() => handleSelectTab('media')}
-            className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+            className={`relative flex ${layoutMode === 'vertical-mobile' ? 'h-8 w-8' : 'h-9 w-9'} items-center justify-center rounded-xl transition cursor-pointer ${
               activeTab === 'media' && !menuCollapsed
                 ? 'bg-white text-black'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
@@ -828,12 +924,28 @@ export function App() {
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => handleSelectTab('camera')}
+            className={`relative flex ${layoutMode === 'vertical-mobile' ? 'h-8 w-8' : 'h-9 w-9'} items-center justify-center rounded-xl transition cursor-pointer ${
+              activeTab === 'camera' && !menuCollapsed
+                ? 'bg-white text-black'
+                : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+            }`}
+            title="Cabin Cam"
+            aria-label="Dock Cabin Cam"
+          >
+            <Camera className="h-4 w-4" />
+            {cabinCamActive && (
+              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            )}
+          </button>
 
           {/* Voice AI Assistant Mic Button */}
           <button
             type="button"
             onClick={() => setAssistantOpen((o) => !o)}
-            className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+            className={`relative flex ${layoutMode === 'vertical-mobile' ? 'h-8 w-8' : 'h-9 w-9'} items-center justify-center rounded-xl transition cursor-pointer ${
               assistantOpen
                 ? 'bg-gradient-to-tr from-blue-500 via-sky-400 to-emerald-400 text-white shadow-[0_0_18px_rgba(56,189,248,0.65)]'
                 : wakeWordActive
