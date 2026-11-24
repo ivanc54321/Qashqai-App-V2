@@ -18,9 +18,11 @@ import {
   Play,
   Pause,
   ParkingSquare,
+  Mic,
 } from 'lucide-react';
 import { CarScene, type CarHotspotState, type CameraPreset, type LayoutMode } from './components/CarScene';
 import { MenuStrip, type TabKey } from './components/MenuStrip';
+import { VoiceAssistantOverlay } from './components/VoiceAssistantOverlay';
 import {
   KENT_FALLBACK_CAMERAS,
   fetchNearbySpeedCameras,
@@ -108,6 +110,28 @@ export function App() {
   const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
   const toggleMiniPlayRef = useRef<(() => void) | null>(null);
   const jumpToParkedRef = useRef<((coords: string) => void) | null>(null);
+  const playStationRef = useRef<((stationId: string) => void) | null>(null);
+  const navigateToRef = useRef<((query: string, label?: string) => void) | null>(null);
+
+  // Voice AI Assistant state + radio volume ducking
+  const [assistantOpen, setAssistantOpen] = useState<boolean>(false);
+  const [wakeWordActive, setWakeWordActive] = useState<boolean>(false);
+  const preDuckVolumeRef = useRef<number | null>(null);
+
+  const handleDuckAudio = useCallback((ducked: boolean) => {
+    if (ducked) {
+      setVolume((curr) => {
+        if (preDuckVolumeRef.current === null) {
+          preDuckVolumeRef.current = curr;
+        }
+        return Math.min(curr, 15);
+      });
+    } else if (preDuckVolumeRef.current !== null) {
+      const restore = preDuckVolumeRef.current;
+      preDuckVolumeRef.current = null;
+      setVolume(restore);
+    }
+  }, []);
 
   // Update layout mode on window resize or device orientation change
   useEffect(() => {
@@ -576,6 +600,12 @@ export function App() {
               onRegisterJumpToCoords={(fn) => {
                 jumpToParkedRef.current = fn;
               }}
+              onRegisterPlayStation={(fn) => {
+                playStationRef.current = fn;
+              }}
+              onRegisterNavigateTo={(fn) => {
+                navigateToRef.current = fn;
+              }}
               gpsCoords={gpsActive ? gpsCoords : null}
               isOverSpeed={isOverSpeed}
               nearestCamera={nearestCamera}
@@ -592,6 +622,78 @@ export function App() {
       {nightDim && (
         <div className="pointer-events-none fixed inset-0 z-40 bg-black/40 transition-opacity duration-300" />
       )}
+
+      {/* Google Assistant-Style Voice AI Overlay */}
+      <VoiceAssistantOverlay
+        isOpen={assistantOpen}
+        onOpenChange={setAssistantOpen}
+        layoutMode={layoutMode}
+        onDuckAudio={handleDuckAudio}
+        onWakeWordActiveChange={setWakeWordActive}
+        context={{
+          speedMph: displayedSpeed,
+          speedLimit: activeCameraLimit,
+          gear,
+          driveMode,
+          driverTemp,
+          passengerTemp,
+          volume,
+          isAudioPlaying,
+          nowPlayingLabel,
+          hotspotState,
+          nightDim,
+          nearestCamera,
+          hasParkedPin: Boolean(parkedPin),
+        }}
+        actions={{
+          navigateTo: (query, label) => {
+            setActiveTab('navigation');
+            setMenuCollapsed(false);
+            setCameraPreset('navigation');
+            setPresetTrigger((n) => n + 1);
+            navigateToRef.current?.(query, label);
+          },
+          playRadioStation: (stationId) => {
+            playStationRef.current?.(stationId);
+          },
+          togglePlayback: (mode) => {
+            if (mode === 'pause' && isAudioPlaying) {
+              toggleMiniPlayRef.current?.();
+            } else if (mode === 'play' && !isAudioPlaying) {
+              toggleMiniPlayRef.current?.();
+            } else if (mode === 'toggle') {
+              toggleMiniPlayRef.current?.();
+            }
+          },
+          setVolume: (vol) => {
+            preDuckVolumeRef.current = vol;
+            setVolume(vol);
+          },
+          setDriverTemp,
+          setPassengerTemp,
+          setSeatHeat: (side, on) => {
+            if (side === 'driver' || side === 'both') setDriverSeatHeat(on);
+            if (side === 'passenger' || side === 'both') setPassengerSeatHeat(on);
+          },
+          setHotspot: (key, on) => {
+            setHotspotState((prev) => ({ ...prev, [key]: on }));
+            setCameraPreset(HOTSPOT_TO_PRESET[key]);
+            setPresetTrigger((n) => n + 1);
+          },
+          setGear: handleSelectGear,
+          setDriveMode,
+          setNightDim,
+          selectTab: handleSelectTab,
+          saveParkedPin: saveParkedLocation,
+          showParkedPin: () => {
+            if (parkedPin) {
+              setActiveTab('navigation');
+              setMenuCollapsed(false);
+              jumpToParkedRef.current?.(parkedPin.coords);
+            }
+          },
+        }}
+      />
 
       {/* Bottom Tesla-Style Infotainment Dock Bar */}
       <footer
@@ -724,6 +826,26 @@ export function App() {
             <Radio className="h-4 w-4" />
             {radioLive && (
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+            )}
+          </button>
+
+          {/* Voice AI Assistant Mic Button */}
+          <button
+            type="button"
+            onClick={() => setAssistantOpen((o) => !o)}
+            className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+              assistantOpen
+                ? 'bg-gradient-to-tr from-blue-500 via-sky-400 to-emerald-400 text-white shadow-[0_0_18px_rgba(56,189,248,0.65)]'
+                : wakeWordActive
+                  ? 'border border-emerald-400/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                  : 'border border-sky-400/25 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 hover:text-white'
+            }`}
+            title="Qashqai Voice AI Assistant"
+            aria-label="Voice AI Assistant"
+          >
+            <Mic className="h-4 w-4" />
+            {wakeWordActive && !assistantOpen && (
+              <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             )}
           </button>
 

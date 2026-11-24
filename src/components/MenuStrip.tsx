@@ -67,6 +67,8 @@ interface MenuStripProps {
   onMediaStateChange: (label: string, playing: boolean) => void;
   onRegisterMiniPlayToggle: (fn: () => void) => void;
   onRegisterJumpToCoords: (fn: (coords: string) => void) => void;
+  onRegisterPlayStation?: (fn: (stationId: string) => void) => void;
+  onRegisterNavigateTo?: (fn: (query: string, label?: string) => void) => void;
   gpsCoords: string | null;
   isOverSpeed: boolean;
   nearestCamera: { camera: SpeedCamera; meters: number } | null;
@@ -107,6 +109,8 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   onMediaStateChange,
   onRegisterMiniPlayToggle,
   onRegisterJumpToCoords,
+  onRegisterPlayStation,
+  onRegisterNavigateTo,
   gpsCoords,
   isOverSpeed,
   nearestCamera,
@@ -378,6 +382,24 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
       setMapLabel('Parked Qashqai');
     });
   }, [onRegisterJumpToCoords]);
+
+  useEffect(() => {
+    if (!onRegisterNavigateTo) return;
+    onRegisterNavigateTo((query: string, label?: string) => {
+      setMapQuery(query);
+      setMapLabel(label || query);
+    });
+  }, [onRegisterNavigateTo]);
+
+  useEffect(() => {
+    if (!onRegisterPlayStation) return;
+    onRegisterPlayStation((stationId: string) => {
+      const found = RADIO_STATIONS.find((s) => s.id === stationId) ?? RADIO_STATIONS[0];
+      if (found) {
+        handleToggleStation(found);
+      }
+    });
+  }, [onRegisterPlayStation, handleToggleStation]);
 
   const handleConnectObd = async () => {
     const navBt = (navigator as unknown as { bluetooth?: { requestDevice: (opts: unknown) => Promise<unknown> } }).bluetooth;
