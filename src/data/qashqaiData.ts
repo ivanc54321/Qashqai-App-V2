@@ -1,18 +1,23 @@
+export type StationCategory = 'urban' | 'mainstream';
+
 export interface RadioStation {
   id: string;
   name: string;
   shortName: string;
   subtitle: string;
+  category: StationCategory;
   gradient: string;
   streams: string[];
 }
 
 export const RADIO_STATIONS: RadioStation[] = [
+  // Urban, Hip-Hop, Grime, R&B & UK Beats
   {
     id: 'kiss',
     name: 'KISS FM',
     shortName: 'KISS',
     subtitle: '100 FM • UK Live',
+    category: 'urban',
     gradient: 'from-pink-500 via-fuchsia-600 to-purple-800',
     streams: [
       'https://stream-al.planetradio.co.uk/kissnational.aac',
@@ -22,10 +27,48 @@ export const RADIO_STATIONS: RadioStation[] = [
     ],
   },
   {
+    id: '1xtra',
+    name: 'BBC Radio 1Xtra',
+    shortName: '1XTRA',
+    subtitle: 'UK Hip-Hop, Grime & Afrobeats',
+    category: 'urban',
+    gradient: 'from-zinc-800 via-neutral-900 to-black',
+    streams: [
+      'https://stream.live.vc.bbcmedia.co.uk/bbc_1xtra',
+      'https://as-hls-ww-live.akamaized.net/pool_92079267/live/ww/bbc_1xtra/bbc_1xtra.isml/bbc_1xtra-audio%3d128000.norewind.m3u8',
+    ],
+  },
+  {
+    id: 'capital-xtra',
+    name: 'Capital XTRA',
+    shortName: 'XTRA',
+    subtitle: 'Hip-Hop & R&B • London',
+    category: 'urban',
+    gradient: 'from-emerald-500 via-teal-600 to-zinc-900',
+    streams: [
+      'https://media-the.musicradio.com/CapitalXTRALondonMP3',
+      'https://media-ice.musicradio.com/CapitalXTRANationalMP3',
+      'https://media-ssl.musicradio.com/CapitalXTRALondonMP3',
+    ],
+  },
+  {
+    id: 'capital-xtra-reloaded',
+    name: 'Capital XTRA Reloaded',
+    shortName: 'RELOAD',
+    subtitle: 'Old Skool Hip-Hop & R&B',
+    category: 'urban',
+    gradient: 'from-amber-500 via-orange-600 to-zinc-900',
+    streams: [
+      'https://media-ice.musicradio.com/CapitalXTRAReloadedMP3',
+      'https://media-ssl.musicradio.com/CapitalXTRAReloadedMP3',
+    ],
+  },
+  {
     id: 'kisstory',
     name: 'KISSTORY',
     shortName: 'KISS\nTORY',
     subtitle: 'Old Skool & Anthems',
+    category: 'urban',
     gradient: 'from-violet-500 via-purple-600 to-indigo-900',
     streams: [
       'https://stream-al.planetradio.co.uk/kisstory.aac',
@@ -38,6 +81,7 @@ export const RADIO_STATIONS: RadioStation[] = [
     name: 'KISS Fresh',
     shortName: 'FRESH',
     subtitle: 'Non-Stop New Beats',
+    category: 'urban',
     gradient: 'from-cyan-500 via-sky-600 to-blue-900',
     streams: [
       'https://stream-al.planetradio.co.uk/kissfresh.aac',
@@ -45,10 +89,51 @@ export const RADIO_STATIONS: RadioStation[] = [
     ],
   },
   {
+    id: 'rinse-fm',
+    name: 'Rinse FM',
+    shortName: 'RINSE',
+    subtitle: '106.8 FM • London Underground',
+    category: 'urban',
+    gradient: 'from-slate-600 via-zinc-800 to-black',
+    streams: ['https://admin.stream.rinse.fm/proxy/rinse_uk/stream'],
+  },
+  {
+    id: 'mi-soul',
+    name: 'Mi-Soul',
+    shortName: 'MI-SOUL',
+    subtitle: 'Soul, R&B & House • London',
+    category: 'urban',
+    gradient: 'from-orange-500 via-rose-600 to-purple-950',
+    streams: ['https://listen-misoul.sharp-stream.com/462_mi_soul_128_mp3'],
+  },
+  {
+    id: 'reprezent',
+    name: 'Reprezent 107.3',
+    shortName: '107.3',
+    subtitle: 'South London • UK Rap & Drill',
+    category: 'urban',
+    gradient: 'from-yellow-500 via-amber-600 to-zinc-900',
+    streams: ['https://radio.canstream.co.uk:8022/live.mp3'],
+  },
+  // Mainstream UK Hits
+  {
+    id: 'capital-fm',
+    name: 'Capital FM',
+    shortName: 'CAPITAL',
+    subtitle: 'UK No.1 Hit Music',
+    category: 'mainstream',
+    gradient: 'from-blue-500 via-indigo-600 to-blue-950',
+    streams: [
+      'https://media-ice.musicradio.com/CapitalMP3',
+      'https://media-ssl.musicradio.com/CapitalMP3',
+    ],
+  },
+  {
     id: 'heart-kent',
     name: 'Heart Kent',
     shortName: 'HEART',
     subtitle: '102.8 / 96.1 FM • Kent',
+    category: 'mainstream',
     gradient: 'from-rose-500 via-red-600 to-rose-950',
     streams: [
       'https://media-ice.musicradio.com/HeartKentMP3',
@@ -60,10 +145,104 @@ export const RADIO_STATIONS: RadioStation[] = [
     name: 'BBC Radio 1',
     shortName: 'R1',
     subtitle: 'UK National • Live',
+    category: 'mainstream',
     gradient: 'from-zinc-600 via-zinc-800 to-black',
+    streams: ['https://stream.live.vc.bbcmedia.co.uk/bbc_radio_one'],
+  },
+  {
+    id: 'bbc-r2',
+    name: 'BBC Radio 2',
+    shortName: 'R2',
+    subtitle: 'UK Mainstream & Classics',
+    category: 'mainstream',
+    gradient: 'from-orange-400 via-amber-600 to-orange-950',
     streams: [
-      'https://stream.live.vc.bbcmedia.co.uk/bbc_radio_one',
+      'https://stream.live.vc.bbcmedia.co.uk/bbc_radio_two',
+      'https://as-hls-ww-live.akamaized.net/pool_74208725/live/ww/bbc_radio_two/bbc_radio_two.isml/bbc_radio_two-audio%3d128000.norewind.m3u8',
     ],
+  },
+];
+
+export interface SpotifyPreset {
+  id: string;
+  name: string;
+  subtitle: string;
+  embedType: 'playlist' | 'album' | 'track';
+  spotifyId: string;
+  custom?: boolean;
+}
+
+export const DEFAULT_SPOTIFY_PRESETS: SpotifyPreset[] = [
+  {
+    id: 'sp-who-we-be',
+    name: 'Who We Be',
+    subtitle: 'UK Rap, Grime & Afrobeats',
+    embedType: 'playlist',
+    spotifyId: '37i9dQZF1DXc8kgYqQLMfH',
+  },
+  {
+    id: 'sp-rapcaviar',
+    name: 'RapCaviar',
+    subtitle: 'Hip-Hop & Rap Hits',
+    embedType: 'playlist',
+    spotifyId: '37i9dQZF1DX0XUsuxWHRQd',
+  },
+  {
+    id: 'sp-90s-hiphop',
+    name: "90s Hip-Hop",
+    subtitle: 'Old Skool Classics',
+    embedType: 'playlist',
+    spotifyId: '37i9dQZF1DX186v583rmzp',
+  },
+  {
+    id: 'sp-rnb',
+    name: 'R&B Weekly',
+    subtitle: 'Smooth Night Drive',
+    embedType: 'playlist',
+    spotifyId: '37i9dQZF1DX4SBhb3fqCJd',
+  },
+  {
+    id: 'sp-top-hits',
+    name: "Today's Top Hits",
+    subtitle: 'Mainstream Chart',
+    embedType: 'playlist',
+    spotifyId: '37i9dQZF1DXcBWIGoYBM5M',
+  },
+];
+
+export interface YouTubePreset {
+  id: string;
+  name: string;
+  subtitle: string;
+  videoId?: string;
+  playlistId?: string;
+  custom?: boolean;
+}
+
+export const DEFAULT_YOUTUBE_PRESETS: YouTubePreset[] = [
+  {
+    id: 'yt-hiphop-247',
+    name: 'Hip-Hop & Chill 24/7',
+    subtitle: 'Live Urban Beats Stream',
+    videoId: '5yx6BWlEVcY',
+  },
+  {
+    id: 'yt-lofi-drive',
+    name: 'Lofi Girl Radio',
+    subtitle: 'Beats to Drive / Relax',
+    videoId: 'jfKfPfyJRdk',
+  },
+  {
+    id: 'yt-night-drive',
+    name: 'Night Drive Synth',
+    subtitle: 'Late Night Motorway',
+    videoId: '4xDzrJKXOOY',
+  },
+  {
+    id: 'yt-rnb-vibes',
+    name: 'Smooth R&B Mix',
+    subtitle: 'Soul & Chill Vibes',
+    videoId: 'kgx4WGK0oNU',
   },
 ];
 

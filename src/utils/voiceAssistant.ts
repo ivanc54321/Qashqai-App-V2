@@ -39,6 +39,7 @@ export interface AssistantActions {
   showParkedPin: () => void;
   saveDashcamClip?: () => void;
   setSentryMode?: (enabled: boolean) => void;
+  openMediaMode?: (mode: 'radio' | 'spotify' | 'youtube' | 'music' | 'videos') => void;
 }
 
 export interface AssistantResponse {
@@ -183,14 +184,34 @@ export async function processVoiceCommand(
     };
   }
 
-  // 3. Radio Stations
+  // 3. Spotify & YouTube
+  if (/\bspotify\b/i.test(lower)) {
+    actions.selectTab('media');
+    actions.openMediaMode?.('spotify');
+    return { reply: 'Opening Spotify.', source: 'offline', actionBadge: 'Spotify' };
+  }
+  if (/\byoutube\b/i.test(lower)) {
+    actions.selectTab('media');
+    actions.openMediaMode?.('youtube');
+    return { reply: 'Opening YouTube.', source: 'offline', actionBadge: 'YouTube' };
+  }
+
+  // 4. Radio Stations (13 UK Urban & Mainstream Stations)
   for (const station of RADIO_STATIONS) {
     const stationLower = station.name.toLowerCase();
-    const shortId = station.id.replace('-', ' ');
+    const shortId = station.id.replace(/-/g, ' ');
     if (
       lower.includes(stationLower) ||
       lower.includes(shortId) ||
-      (station.id === 'bbc-r1' && /\b(bbc|radio 1|radio one)\b/i.test(lower)) ||
+      (station.id === '1xtra' && /\b(1xtra|one extra|1 extra)\b/i.test(lower)) ||
+      (station.id === 'capital-xtra-reloaded' && /\breloaded\b/i.test(lower)) ||
+      (station.id === 'capital-xtra' && /\b(capital xtra|capital extra)\b/i.test(lower) && !/reloaded/i.test(lower)) ||
+      (station.id === 'rinse-fm' && /\brinse\b/i.test(lower)) ||
+      (station.id === 'mi-soul' && /\b(mi soul|my soul|mi-soul)\b/i.test(lower)) ||
+      (station.id === 'reprezent' && /\b(reprezent|represent|107\.3)\b/i.test(lower)) ||
+      (station.id === 'capital-fm' && /\bcapital fm\b/i.test(lower)) ||
+      (station.id === 'bbc-r1' && /\b(radio 1|radio one)\b/i.test(lower) && !/xtra|extra/i.test(lower)) ||
+      (station.id === 'bbc-r2' && /\b(radio 2|radio two)\b/i.test(lower)) ||
       (station.id === 'heart-kent' && /\bheart\b/i.test(lower))
     ) {
       actions.playRadioStation(station.id);
@@ -202,7 +223,7 @@ export async function processVoiceCommand(
     }
   }
   if (/\b(play radio|turn on radio|start radio)\b/i.test(lower)) {
-    actions.playRadioStation('kiss-fm');
+    actions.playRadioStation('kiss');
     return {
       reply: 'Playing KISS FM.',
       source: 'offline',

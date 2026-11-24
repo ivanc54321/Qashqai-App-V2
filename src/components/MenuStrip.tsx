@@ -38,10 +38,13 @@ import {
   ParkingSquare,
   BatteryCharging,
   Activity,
+  Music2,
+  Tv,
 } from 'lucide-react';
 import type { CarHotspotState, LayoutMode } from './CarScene';
 import type { ParkedPin } from '../App';
 import { CabinCamPanel, type CabinCamControlApi } from './CabinCamPanel';
+import { StreamingAppsPanel } from './StreamingAppsPanel';
 import type { DetectedGesture } from '../utils/cabinVision';
 import {
   RADIO_STATIONS,
@@ -49,12 +52,14 @@ import {
   DEFAULT_MAINTENANCE_ITEMS,
   QASHQAI_GLOVEBOX_SPECS,
   type RadioStation,
+  type StationCategory,
   type MaintenanceItem,
 } from '../data/qashqaiData';
 import type { SpeedCamera } from '../utils/speedCameras';
 import { loadMediaRecords, saveMediaRecords, deleteMediaRecord } from '../utils/mediaStore';
 
 export type TabKey = 'overview' | 'navigation' | 'media' | 'camera';
+export type MediaMode = 'radio' | 'spotify' | 'youtube' | 'music' | 'videos';
 
 interface MenuStripProps {
   activeTab: TabKey;
@@ -72,6 +77,7 @@ interface MenuStripProps {
   onRegisterPlayStation?: (fn: (stationId: string) => void) => void;
   onRegisterNavigateTo?: (fn: (query: string, label?: string) => void) => void;
   onRegisterSkipMedia?: (fn: (dir: 1 | -1) => string) => void;
+  onRegisterOpenMediaMode?: (fn: (mode: MediaMode) => void) => void;
   gpsCoords: string | null;
   isOverSpeed: boolean;
   nearestCamera: { camera: SpeedCamera; meters: number } | null;
@@ -89,7 +95,6 @@ interface MenuStripProps {
   onRegisterCabinCamControl?: (api: CabinCamControlApi) => void;
 }
 
-type MediaMode = 'radio' | 'music' | 'videos';
 type ActiveAudioSource = 'none' | 'radio' | 'local-music';
 type RadioStatus = 'idle' | 'loading' | 'playing' | 'error';
 
@@ -123,6 +128,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   onRegisterPlayStation,
   onRegisterNavigateTo,
   onRegisterSkipMedia,
+  onRegisterOpenMediaMode,
   gpsCoords,
   isOverSpeed,
   nearestCamera,
@@ -141,6 +147,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
 }) => {
   const isCompact = layoutMode !== 'horizontal-tablet';
   const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
+  const [radioFilter, setRadioFilter] = useState<'all' | StationCategory>('all');
   const [timeStr, setTimeStr] = useState('');
   const [activeDest, setActiveDest] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
@@ -444,6 +451,13 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
     activeStation,
     handleToggleStation,
   ]);
+
+  useEffect(() => {
+    if (!onRegisterOpenMediaMode) return;
+    onRegisterOpenMediaMode((mode: MediaMode) => {
+      setMediaMode(mode);
+    });
+  }, [onRegisterOpenMediaMode]);
 
   const handleConnectObd = async () => {
     const navBt = (navigator as unknown as { bluetooth?: { requestDevice: (opts: unknown) => Promise<unknown> } }).bluetooth;
@@ -1261,13 +1275,15 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
           aria-label="Select local video files"
         />
 
-        {/* Tab 3: Media Hub (Multi-Station UK Radio • Persistent Local Music • Local Videos) */}
+        {/* Tab 3: Media Hub (UK Radio • Spotify • YouTube • Persistent Local Music • Videos) */}
         {activeTab === 'media' && (
-          <div className="flex flex-col gap-3.5 rounded-3xl border border-white/10 bg-black/60 p-4 backdrop-blur-xl shadow-2xl">
-            <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] p-1">
+          <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-black/60 p-3.5 sm:p-4 backdrop-blur-xl shadow-2xl">
+            <div className="grid grid-cols-5 gap-1 rounded-xl border border-white/10 bg-white/[0.04] p-1">
               {(
                 [
                   { id: 'radio', label: 'Radio', Icon: Radio },
+                  { id: 'spotify', label: 'Spotify', Icon: Music2 },
+                  { id: 'youtube', label: 'YouTube', Icon: Tv },
                   { id: 'music', label: 'Music', Icon: Music },
                   { id: 'videos', label: 'Videos', Icon: Film },
                 ] as const
@@ -1277,26 +1293,30 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                   <button
                     key={id}
                     onClick={() => setMediaMode(id)}
-                    className={`flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                    className={`flex items-center justify-center gap-1 rounded-lg py-1.5 px-1 text-[10px] sm:text-[11px] font-semibold transition cursor-pointer ${
                       active
-                        ? 'bg-white text-black shadow-sm'
+                        ? id === 'spotify'
+                          ? 'bg-[#1DB954] text-black shadow-sm'
+                          : id === 'youtube'
+                            ? 'bg-red-600 text-white shadow-sm'
+                            : 'bg-white text-black shadow-sm'
                         : 'text-zinc-400 hover:bg-white/5 hover:text-white'
                     }`}
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span>{label}</span>
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{label}</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* 1. UK Live Radio Presets (KISS FM + Sister & Kent Stations) */}
+            {/* 1. UK Live Radio Presets (Urban, Hip-Hop & Mainstream) */}
             {mediaMode === 'radio' && (
               <div className="flex flex-col gap-2.5">
                 {/* Featured One-Click Active Station */}
                 <button
                   onClick={() => handleToggleStation(activeStation)}
-                  className={`group flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left transition cursor-pointer ${
+                  className={`group flex w-full items-center gap-3.5 rounded-2xl border p-3 text-left transition cursor-pointer ${
                     activeAudioSource === 'radio' && (radioStatus === 'playing' || radioStatus === 'loading')
                       ? 'border-pink-500/50 bg-gradient-to-r from-pink-600/25 via-fuchsia-600/15 to-black/40 shadow-lg'
                       : 'border-white/15 bg-white/[0.05] hover:border-white/30 hover:bg-white/10'
@@ -1336,9 +1356,41 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                   </div>
                 </button>
 
+                {/* Category Filter Pills (All / Urban & Hip-Hop / Mainstream) */}
+                <div className="flex items-center gap-1.5">
+                  {(
+                    [
+                      { key: 'all', label: `All (${RADIO_STATIONS.length})` },
+                      {
+                        key: 'urban',
+                        label: `Urban & Hip-Hop (${RADIO_STATIONS.filter((s) => s.category === 'urban').length})`,
+                      },
+                      {
+                        key: 'mainstream',
+                        label: `Mainstream (${RADIO_STATIONS.filter((s) => s.category === 'mainstream').length})`,
+                      },
+                    ] as const
+                  ).map((pill) => (
+                    <button
+                      key={pill.key}
+                      type="button"
+                      onClick={() => setRadioFilter(pill.key)}
+                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold transition cursor-pointer ${
+                        radioFilter === pill.key
+                          ? 'border-white/40 bg-white text-black'
+                          : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {pill.label}
+                    </button>
+                  ))}
+                </div>
+
                 {/* 1-Tap Station Presets */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                  {RADIO_STATIONS.map((station) => {
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-56 overflow-y-auto pr-0.5">
+                  {RADIO_STATIONS.filter(
+                    (s) => radioFilter === 'all' || s.category === radioFilter
+                  ).map((station) => {
                     const isSelected = activeStation.id === station.id;
                     const isPlayingThis = isSelected && activeAudioSource === 'radio' && radioStatus === 'playing';
                     return (
@@ -1346,13 +1398,18 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                         key={station.id}
                         type="button"
                         onClick={() => handleToggleStation(station)}
-                        className={`flex items-center justify-between rounded-xl border px-3 py-2 text-left text-xs transition cursor-pointer ${
+                        className={`flex items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2 text-left text-xs transition cursor-pointer ${
                           isSelected
                             ? 'border-white/35 bg-white/15 text-white font-semibold'
                             : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/10'
                         }`}
                       >
-                        <span className="truncate">{station.name}</span>
+                        <div className="min-w-0">
+                          <div className="truncate text-xs leading-tight">{station.name}</div>
+                          <div className="truncate text-[9px] text-zinc-500 leading-tight mt-0.5">
+                            {station.category === 'urban' ? 'Urban' : 'Mainstream'}
+                          </div>
+                        </div>
                         {isPlayingThis && (
                           <span className="h-2 w-2 shrink-0 rounded-full bg-red-500 animate-pulse" />
                         )}
@@ -1361,6 +1418,28 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                   })}
                 </div>
               </div>
+            )}
+
+            {/* 2. Spotify Embedded Player & App Launcher */}
+            {mediaMode === 'spotify' && (
+              <StreamingAppsPanel
+                mode="spotify"
+                isCompact={isCompact}
+                onStopRadio={() => {
+                  if (activeSourceRef.current !== 'none') stopAudio();
+                }}
+              />
+            )}
+
+            {/* 3. YouTube Embedded Player & App Launcher */}
+            {mediaMode === 'youtube' && (
+              <StreamingAppsPanel
+                mode="youtube"
+                isCompact={isCompact}
+                onStopRadio={() => {
+                  if (activeSourceRef.current !== 'none') stopAudio();
+                }}
+              />
             )}
 
             {/* 2. Local Music Player (IndexedDB Persisted) */}

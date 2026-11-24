@@ -23,7 +23,7 @@ import {
   Hand,
 } from 'lucide-react';
 import { CarScene, type CarHotspotState, type CameraPreset, type LayoutMode } from './components/CarScene';
-import { MenuStrip, type TabKey } from './components/MenuStrip';
+import { MenuStrip, type TabKey, type MediaMode } from './components/MenuStrip';
 import { VoiceAssistantOverlay } from './components/VoiceAssistantOverlay';
 import type { CabinCamControlApi } from './components/CabinCamPanel';
 import type { DetectedGesture } from './utils/cabinVision';
@@ -117,6 +117,7 @@ export function App() {
   const playStationRef = useRef<((stationId: string) => void) | null>(null);
   const navigateToRef = useRef<((query: string, label?: string) => void) | null>(null);
   const skipMediaRef = useRef<((dir: 1 | -1) => string) | null>(null);
+  const openMediaModeRef = useRef<((mode: MediaMode) => void) | null>(null);
   const cabinCamApiRef = useRef<CabinCamControlApi | null>(null);
 
   // Tablet Front Camera (Cabin Cam) state
@@ -650,6 +651,9 @@ export function App() {
               onRegisterSkipMedia={(fn) => {
                 skipMediaRef.current = fn;
               }}
+              onRegisterOpenMediaMode={(fn) => {
+                openMediaModeRef.current = fn;
+              }}
               gpsCoords={gpsActive ? gpsCoords : null}
               isOverSpeed={isOverSpeed}
               nearestCamera={nearestCamera}
@@ -787,6 +791,9 @@ export function App() {
           },
           setSentryMode: (enabled) => {
             cabinCamApiRef.current?.setSentryEnabled(enabled);
+          },
+          openMediaMode: (mode) => {
+            openMediaModeRef.current?.(mode);
           },
         }}
       />
