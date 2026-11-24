@@ -1,14 +1,18 @@
 {
   "name": "car-dashboard",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
+  "description": "Nissan Qashqai J10 Digital Car Dashboard",
+  "author": "ivanc54321",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "android:sync": "npm run build && npx cap sync android"
+    "android:sync": "npm run build && npx cap sync android",
+    "win:build": "npm run build && npx electron-builder --win dir --x64 && makensis electron/installer.nsi"
   },
   "dependencies": {
     "@capacitor/core": "^8.6.2",
@@ -27,8 +31,40 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
     "oxlint": "^1.90.0",
     "typescript": "~7.0.2",
     "vite": "^8.3.6"
+  },
+  "build": {
+    "appId": "com.ivanc54321.qashqaiappv2",
+    "productName": "Qashqai App V2",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "Qashqai-App-V2-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Qashqai App V2"
+    }
   }
 }
