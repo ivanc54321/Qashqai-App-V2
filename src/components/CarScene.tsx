@@ -27,8 +27,8 @@ const CAMERA_PRESETS: Record<CameraPreset, CameraPresetConfig> = {
     label: 'Overview',
   },
   navigation: {
-    position: [0, 8.2, -3.6],
-    target: [0, 0.25, 0.35],
+    position: [0, 5.8, -5.2],
+    target: [0, 0.35, 1.15],
     autoRotate: false,
     label: 'Navigation',
   },
@@ -64,6 +64,7 @@ interface CarSceneProps {
   cameraPreset: CameraPreset;
   presetTrigger: number;
   menuCollapsed: boolean;
+  showLaneLines: boolean;
 }
 
 declare global {
@@ -289,6 +290,51 @@ function createNavCompassTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/**
+ * Generates glowing blue ADAS inner lane lines and subtle outer road lines
+ * matching the Tesla-style driving visualization.
+ */
+function createLaneLinesTexture(): THREE.CanvasTexture {
+  const w = 512;
+  const h = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+
+  const drawVerticalGlowLine = (x: number, colorCore: string, colorGlow: string, lineWidth: number) => {
+    const grad = ctx.createLinearGradient(0, h, 0, 0);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.15, colorGlow);
+    grad.addColorStop(0.65, colorCore);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.save();
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = lineWidth;
+    ctx.shadowColor = colorCore;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.moveTo(x, h * 0.96);
+    ctx.lineTo(x, h * 0.04);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // Inner glowing blue Autopilot/ADAS lane boundaries
+  drawVerticalGlowLine(w * 0.34, 'rgba(56, 189, 248, 0.95)', 'rgba(37, 99, 235, 0.65)', 5);
+  drawVerticalGlowLine(w * 0.66, 'rgba(56, 189, 248, 0.95)', 'rgba(37, 99, 235, 0.65)', 5);
+
+  // Outer subtle grey road boundary lines
+  drawVerticalGlowLine(w * 0.14, 'rgba(148, 163, 184, 0.38)', 'rgba(100, 116, 139, 0.15)', 2.5);
+  drawVerticalGlowLine(w * 0.86, 'rgba(148, 163, 184, 0.38)', 'rgba(100, 116, 139, 0.15)', 2.5);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 interface CameraTransition {
   active: boolean;
   startTime: number;
@@ -305,11 +351,13 @@ export const CarScene: React.FC<CarSceneProps> = ({
   cameraPreset,
   presetTrigger,
   menuCollapsed,
+  showLaneLines,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<CarHotspotState>(hotspotState);
   const presetRef = useRef<CameraPreset>(cameraPreset);
   const menuCollapsedRef = useRef<boolean>(menuCollapsed);
+  const showLaneLinesRef = useRef<boolean>(showLaneLines);
   const applyOffsetRef = useRef<(() => void) | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -353,6 +401,10 @@ export const CarScene: React.FC<CarSceneProps> = ({
   useEffect(() => {
     stateRef.current = hotspotState;
   }, [hotspotState]);
+
+  useEffect(() => {
+    showLaneLinesRef.current = showLaneLines;
+  }, [showLaneLines]);
 
   useEffect(() => {
     menuCollapsedRef.current = menuCollapsed;
@@ -401,8 +453,8 @@ export const CarScene: React.FC<CarSceneProps> = ({
       const h = container.clientHeight;
       camera.aspect = w / h;
       if (w >= 900) {
-        const xOffset = menuCollapsedRef.current ? w * 0.03 : w * 0.2;
-        camera.setViewOffset(w, h, xOffset, -h * 0.05, w, h);
+        const xOffset = menuCollapsedRef.current ? 0 : w * 0.3;
+        camera.setViewOffset(w, h, xOffset, -h * 0.04, w, h);
       } else {
         camera.clearViewOffset();
       }
@@ -499,6 +551,20 @@ export const CarScene: React.FC<CarSceneProps> = ({
     navCompassPlane.rotation.x = -Math.PI / 2;
     navCompassPlane.position.y = 0.006;
     scene.add(navCompassPlane);
+
+    // Tesla-style glowing blue ADAS lane lines (fade in during Drive / Navigation mode)
+    const laneLinesTex = createLaneLinesTexture();
+    const laneLinesMat = new THREE.MeshBasicMaterial({
+      map: laneLinesTex,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const laneLinesPlane = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 16), laneLinesMat);
+    laneLinesPlane.rotation.x = -Math.PI / 2;
+    laneLinesPlane.position.set(0, 0.007, 1.5);
+    scene.add(laneLinesPlane);
 
     // High-contrast soft contact shadow catcher beneath tires & chassis
     const shadowCatcher = new THREE.Mesh(
@@ -918,11 +984,15 @@ export const CarScene: React.FC<CarSceneProps> = ({
       }
 
       // Smooth fade & subtle rotation for Navigation floor compass ring
-      const targetCompassOpacity = presetRef.current === 'navigation' ? 0.78 : 0;
+      const targetCompassOpacity = presetRef.current === 'navigation' && !showLaneLinesRef.current ? 0.78 : 0;
       navCompassMat.opacity += (targetCompassOpacity - navCompassMat.opacity) * 0.08;
       if (navCompassMat.opacity > 0.01) {
         navCompassPlane.rotation.z = Math.sin(t * 0.25) * 0.04;
       }
+
+      // Smooth fade for glowing blue ADAS lane lines
+      const targetLaneOpacity = showLaneLinesRef.current ? 0.92 : 0;
+      laneLinesMat.opacity += (targetLaneOpacity - laneLinesMat.opacity) * 0.08;
 
       controls.update();
       renderer.render(scene, camera);
@@ -938,6 +1008,7 @@ export const CarScene: React.FC<CarSceneProps> = ({
       controls.dispose();
       floorTex.dispose();
       navCompassTex.dispose();
+      laneLinesTex.dispose();
       glowTex.dispose();
       carpaintAoTex.dispose();
       bakedShadowTex.dispose();
@@ -956,7 +1027,7 @@ export const CarScene: React.FC<CarSceneProps> = ({
       {isLoaded && isUserOrbited && (
         <button
           onClick={() => triggerGlideToPreset(cameraPreset)}
-          className="absolute bottom-5 left-5 z-20 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/65 px-3.5 py-2 text-xs font-medium text-zinc-100 backdrop-blur-xl shadow-xl hover:border-white/35 hover:bg-black/80 active:scale-95 transition cursor-pointer"
+          className="absolute bottom-20 left-5 z-20 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/65 px-3.5 py-2 text-xs font-medium text-zinc-100 backdrop-blur-xl shadow-xl hover:border-white/35 hover:bg-black/80 active:scale-95 transition cursor-pointer"
           aria-label="Reset camera view"
         >
           <RotateCcw className="h-3.5 w-3.5 text-zinc-300" />

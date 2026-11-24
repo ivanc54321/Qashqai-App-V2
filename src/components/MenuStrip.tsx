@@ -10,7 +10,6 @@ import {
   Lightbulb,
   DoorOpen,
   PackageOpen,
-  Clock,
   Fuel,
   Search,
   ShieldCheck,
@@ -32,18 +31,27 @@ import {
   Layers,
   PanelRightClose,
   PanelRightOpen,
+  ArrowUp,
+  Wifi,
+  Bluetooth,
 } from 'lucide-react';
-import type { CarHotspotState, CameraPreset } from './CarScene';
+import type { CarHotspotState } from './CarScene';
+
+export type TabKey = 'overview' | 'navigation' | 'media';
 
 interface MenuStripProps {
+  activeTab: TabKey;
+  onSelectTab: (tab: TabKey) => void;
   hotspotState: CarHotspotState;
   onToggleHotspot: (key: keyof CarHotspotState) => void;
-  onSelectCameraPreset: (preset: CameraPreset) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  volume: number;
+  onChangeVolume: (vol: number) => void;
+  onRadioLiveChange: (live: boolean) => void;
+  gpsCoords: string | null;
 }
 
-type TabKey = 'overview' | 'navigation' | 'media';
 type MediaMode = 'radio' | 'music' | 'videos';
 type ActiveAudioSource = 'none' | 'radio' | 'local-music';
 type RadioStatus = 'idle' | 'loading' | 'playing' | 'error';
@@ -73,6 +81,7 @@ const DESTINATIONS = [
     query: 'Westwood Cross, Margate, Kent, UK',
     eta: '6 min',
     distance: '2.1 mi',
+    speedLimit: 30,
   },
   {
     name: 'Shell Diesel Station',
@@ -80,6 +89,7 @@ const DESTINATIONS = [
     query: 'Shell, Margate Road, Broadstairs, Kent, UK',
     eta: '4 min',
     distance: '1.3 mi',
+    speedLimit: 40,
   },
   {
     name: 'Margate Seafront',
@@ -87,6 +97,7 @@ const DESTINATIONS = [
     query: 'Margate Main Sands, Margate, Kent, UK',
     eta: '9 min',
     distance: '3.2 mi',
+    speedLimit: 30,
   },
 ];
 
@@ -98,16 +109,19 @@ const formatFileSize = (bytes: number) => {
 const stripExtension = (filename: string) => filename.replace(/\.[^/.]+$/, '');
 
 export const MenuStrip: React.FC<MenuStripProps> = ({
+  activeTab,
+  onSelectTab,
   hotspotState,
   onToggleHotspot,
-  onSelectCameraPreset,
   isCollapsed,
   onToggleCollapse,
+  volume,
+  onChangeVolume,
+  onRadioLiveChange,
+  gpsCoords,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
   const [timeStr, setTimeStr] = useState('');
-  const [volume, setVolume] = useState(80);
   const [activeDest, setActiveDest] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [mapQuery, setMapQuery] = useState(DESTINATIONS[0].query);
@@ -141,7 +155,8 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
 
   useEffect(() => {
     activeSourceRef.current = activeAudioSource;
-  }, [activeAudioSource]);
+    onRadioLiveChange(activeAudioSource === 'radio' && radioStatus === 'playing');
+  }, [activeAudioSource, radioStatus, onRadioLiveChange]);
 
   useEffect(() => {
     const updateTime = () => {
@@ -363,7 +378,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   const motSoon = !motExpired && daysUntilMot <= 30;
 
   return (
-    <aside className="flex w-full flex-col gap-3 text-zinc-100">
+    <aside className="flex h-full w-full flex-col gap-3 text-zinc-100">
       {/* Minimized Vertical Glass Icon Dock */}
       {isCollapsed && (
         <div className="flex flex-col items-center gap-2 rounded-3xl border border-white/10 bg-black/60 p-2 backdrop-blur-xl shadow-2xl">
@@ -394,9 +409,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                 key={key}
                 type="button"
                 onClick={() => {
-                  setActiveTab(key);
-                  onSelectCameraPreset(key);
-                  onToggleCollapse();
+                  onSelectTab(key);
                 }}
                 className={`relative flex h-11 w-11 items-center justify-center rounded-2xl border transition cursor-pointer ${
                   isActive
@@ -460,78 +473,63 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
       )}
 
       {/* Full Expanded Menu (kept mounted via CSS hidden so audio/maps state persists seamlessly) */}
-      <div className={isCollapsed ? 'hidden' : 'flex w-full flex-col gap-3'}>
-        {/* Persistent Top Status Bar + UK Plate Header */}
-        <div className="flex flex-col gap-2.5 rounded-2xl border border-white/10 bg-black/60 px-4 py-3 backdrop-blur-xl shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[11px] font-bold text-white border border-white/15">
-                P
-              </span>
-              <span className="text-[11px] font-semibold tracking-widest text-zinc-300">READY</span>
-            </div>
-            <div className="flex items-center gap-2.5 text-xs text-zinc-300">
-              <span className="flex items-center gap-1.5" title="Diesel Fuel">
-                <Fuel className="h-3.5 w-3.5 text-zinc-200" />
-                <span className="font-medium text-white">76%</span>
-                <span className="text-zinc-400">• 410 mi</span>
-              </span>
-              <span className="flex items-center gap-1 text-zinc-300">
-                <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                <span className="font-medium text-white">{timeStr || '12:16'}</span>
-              </span>
-              <button
-                type="button"
-                onClick={onToggleCollapse}
-                className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-zinc-300 hover:bg-white/15 hover:text-white transition cursor-pointer"
-                aria-label="Minimize menu to icons"
-                title="Minimize to Icons"
-              >
-                <PanelRightClose className="h-3.5 w-3.5" />
-              </button>
-            </div>
+      <div className={isCollapsed ? 'hidden' : 'flex h-full w-full flex-col gap-2.5'}>
+        {/* Sleek Top Status Bar + Tab Switcher */}
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/65 px-3.5 py-2 backdrop-blur-xl shadow-xl">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-400">
+              <Fuel className="h-3.5 w-3.5" />
+              76%
+            </span>
+            <span className="hidden sm:inline text-xs font-semibold tracking-wide text-white truncate">
+              NISSAN QASHQAI
+            </span>
+            <span className="rounded bg-[#facc15] px-1.5 py-0.5 text-[10px] font-black tracking-wider text-zinc-950">
+              WG62 HJC
+            </span>
           </div>
 
-        {/* UK Number Plate + Model Title */}
-        <div className="flex items-center justify-between border-t border-white/10 pt-2.5">
-          <div>
-            <div className="text-sm font-bold tracking-wide text-white">NISSAN QASHQAI</div>
-            <div className="text-[11px] text-zinc-400">Black • Diesel • Reg. 28 Nov 2012</div>
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] p-0.5">
+            {(
+              [
+                { key: 'overview', label: 'Overview' },
+                { key: 'navigation', label: 'Navigation' },
+                { key: 'media', label: 'Media' },
+              ] as { key: TabKey; label: string }[]
+            ).map((tab) => {
+              const active = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => onSelectTab(tab.key)}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                    active
+                      ? 'bg-white text-black shadow-sm'
+                      : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
-          <div className="rounded-md bg-[#facc15] px-2.5 py-1 text-xs font-black tracking-wider text-zinc-950 shadow-sm border border-yellow-300/60">
-            WG62 HJC
+
+          <div className="flex items-center gap-2 text-xs text-zinc-300 shrink-0">
+            <Bluetooth className="hidden md:block h-3.5 w-3.5 text-sky-400" />
+            <Wifi className="hidden md:block h-3.5 w-3.5 text-zinc-300" />
+            <span className="hidden sm:inline text-[11px] text-zinc-400">11°C</span>
+            <span className="font-medium text-white text-xs">{timeStr || '12:16'}</span>
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/[0.06] text-zinc-300 hover:bg-white/15 hover:text-white transition cursor-pointer"
+              aria-label="Minimize menu to icons"
+              title="Minimize to Icons"
+            >
+              <PanelRightClose className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
-      </div>
-
-      {/* Tab Switcher */}
-      <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/55 p-1 backdrop-blur-xl">
-        {(
-          [
-            { key: 'overview', label: 'Overview' },
-            { key: 'navigation', label: 'Navigation' },
-            { key: 'media', label: 'Media' },
-          ] as { key: TabKey; label: string }[]
-        ).map((tab) => {
-          const active = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => {
-                setActiveTab(tab.key);
-                onSelectCameraPreset(tab.key);
-              }}
-              className={`rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
-                active
-                  ? 'bg-white text-black shadow-sm'
-                  : 'text-zinc-400 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
 
       {/* Tab 1: Overview (Vehicle Profile, MOT Status & Live Telemetry) */}
       {activeTab === 'overview' && (
@@ -626,90 +624,93 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Navigation with Dark-Themed Google Maps */}
+      {/* Tab 2: Full-Height Tesla-Style Dark Google Maps Navigation */}
       {activeTab === 'navigation' && (
-        <div className="flex flex-col gap-3 rounded-3xl border border-white/10 bg-black/55 p-4 backdrop-blur-xl shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 text-white">
-                <Navigation className="h-4 w-4" />
-              </div>
+        <div className="relative flex-1 min-h-[340px] w-full overflow-hidden rounded-3xl border border-white/15 bg-zinc-950 shadow-2xl">
+          <iframe
+            title="Google Maps Navigation"
+            src={`https://maps.google.com/maps?q=${encodeURIComponent(gpsCoords && mapLabel === 'My GPS Location' ? gpsCoords : mapQuery)}&t=${mapStyle === 'satellite' ? 'k' : ''}&z=14&ie=UTF8&iwloc=&output=embed`}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            className="h-full w-full border-0"
+            style={
+              mapStyle === 'dark'
+                ? {
+                    filter:
+                      'invert(92%) hue-rotate(180deg) brightness(90%) contrast(96%) saturate(70%)',
+                  }
+                : {
+                    filter: 'brightness(88%) contrast(106%) saturate(90%)',
+                  }
+            }
+          />
+
+          {/* Subtle dark vignette */}
+          <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/10 shadow-[inset_0_0_28px_rgba(0,0,0,0.6)]" />
+
+          {/* Floating Top-Left: Blue Turn-by-Turn Card + UK Speed Limit Badge */}
+          <div className="absolute left-3 top-3 flex flex-col gap-2 max-w-[230px]">
+            <div className="flex items-center gap-2.5 rounded-xl bg-blue-600/95 px-3 py-2 text-white shadow-xl backdrop-blur-md">
+              <ArrowUp className="h-5 w-5 shrink-0" />
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold tracking-wide text-white">Navigation</h2>
-                <p className="truncate text-[11px] text-zinc-400">
-                  {mapLabel} • {DESTINATIONS[activeDest]?.eta ?? 'Live'}
-                </p>
+                <div className="text-sm font-bold leading-tight">
+                  {DESTINATIONS[activeDest]?.distance ?? '2.1 mi'}
+                </div>
+                <div className="truncate text-[11px] text-blue-100">
+                  Toward {mapLabel}
+                </div>
               </div>
             </div>
-            <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapQuery)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-black shadow-sm hover:bg-zinc-200 transition"
-              title="Open turn-by-turn directions in Google Maps"
-            >
-              <span>Start GPS</span>
-              <ExternalLink className="h-3 w-3" />
-            </a>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border-[3.5px] border-red-500 bg-white text-xs font-black text-zinc-950 shadow-lg">
+              {DESTINATIONS[activeDest]?.speedLimit ?? 30}
+            </div>
           </div>
 
-          {/* Search Destination Form */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const trimmed = searchQuery.trim();
-              if (!trimmed) return;
-              setMapQuery(trimmed);
-              setMapLabel(trimmed);
-            }}
-            className="relative flex items-center gap-1.5"
-          >
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
+          {/* Floating Top-Right: Search + Map Controls */}
+          <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = searchQuery.trim();
+                if (!trimmed) return;
+                setMapQuery(trimmed);
+                setMapLabel(trimmed);
+              }}
+              className="flex items-center gap-1 rounded-xl border border-white/15 bg-black/80 p-1 backdrop-blur-md shadow-xl"
+            >
+              <Search className="ml-1.5 h-3.5 w-3.5 text-zinc-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search postcode or place..."
-                className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-8 pr-3 text-xs text-white placeholder-zinc-500 outline-none focus:border-white/30 focus:bg-white/10 transition"
+                className="w-36 sm:w-44 bg-transparent px-1.5 py-1 text-xs text-white placeholder-zinc-500 outline-none"
               />
-            </div>
-            <button
-              type="submit"
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20 transition cursor-pointer"
-            >
-              Go
-            </button>
-          </form>
+              <button
+                type="submit"
+                className="rounded-lg bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/25 transition cursor-pointer"
+              >
+                Go
+              </button>
+            </form>
 
-          {/* Dark-Themed Embedded Google Map */}
-          <div className="relative h-44 w-full overflow-hidden rounded-2xl border border-white/15 bg-zinc-950 shadow-inner">
-            <iframe
-              title="Google Maps Navigation"
-              src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=${mapStyle === 'satellite' ? 'k' : ''}&z=14&ie=UTF8&iwloc=&output=embed`}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              className="h-full w-full border-0"
-              style={
-                mapStyle === 'dark'
-                  ? {
-                      filter:
-                        'invert(92%) hue-rotate(180deg) brightness(90%) contrast(96%) saturate(70%)',
-                    }
-                  : {
-                      filter: 'brightness(88%) contrast(106%) saturate(90%)',
-                    }
-              }
-            />
-            {/* Subtle dark studio edge vignette */}
-            <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-inset ring-white/10 shadow-[inset_0_0_24px_rgba(0,0,0,0.65)]" />
-
-            {/* Floating Map Controls (Dark/Satellite + Fullscreen) */}
-            <div className="absolute right-2 top-2 flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
+              {gpsCoords && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMapQuery(gpsCoords);
+                    setMapLabel('My GPS Location');
+                  }}
+                  className="rounded-lg border border-sky-400/40 bg-black/80 px-2.5 py-1 text-[10px] font-semibold text-sky-300 backdrop-blur-md hover:bg-black transition cursor-pointer"
+                >
+                  My GPS
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setMapStyle((s) => (s === 'dark' ? 'satellite' : 'dark'))}
-                className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-black/75 px-2 py-1 text-[10px] font-semibold text-zinc-100 backdrop-blur-md hover:bg-black transition cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-black/80 px-2.5 py-1 text-[10px] font-semibold text-zinc-100 backdrop-blur-md hover:bg-black transition cursor-pointer"
                 title="Switch Dark / Satellite map"
               >
                 <Layers className="h-3 w-3" />
@@ -718,7 +719,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
               <button
                 type="button"
                 onClick={() => setMapFullscreen(true)}
-                className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/15 bg-black/75 text-white backdrop-blur-md hover:bg-black transition cursor-pointer"
+                className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/15 bg-black/80 text-white backdrop-blur-md hover:bg-black transition cursor-pointer"
                 aria-label="Expand map fullscreen"
                 title="Fullscreen Map"
               >
@@ -727,40 +728,54 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
             </div>
           </div>
 
-          {/* Quick Local Presets (Westwood Cross / Margate, Kent) */}
-          <div className="flex flex-col gap-1.5">
-            {filteredDests.map((dest) => {
-              const idx = DESTINATIONS.indexOf(dest);
-              const isSelected = mapQuery === dest.query;
-              return (
-                <button
-                  key={dest.name}
-                  type="button"
-                  onClick={() => {
-                    setActiveDest(idx);
-                    setMapQuery(dest.query);
-                    setMapLabel(dest.name);
-                  }}
-                  className={`flex items-center justify-between rounded-xl px-3 py-2 text-left transition cursor-pointer ${
-                    isSelected
-                      ? 'bg-white/12 border border-white/25 text-white'
-                      : 'bg-white/[0.04] border border-transparent text-zinc-300 hover:bg-white/10'
-                  }`}
+          {/* Floating Bottom Route/ETA Card + Quick Kent Presets */}
+          <div className="absolute inset-x-3 bottom-3 flex flex-wrap items-end justify-between gap-2">
+            <div className="flex flex-col gap-1.5 rounded-2xl border border-white/15 bg-black/85 p-3 backdrop-blur-xl shadow-2xl min-w-[210px]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="truncate text-xs font-bold text-white">{mapLabel}</span>
+                <span className="text-xs font-semibold text-zinc-300">
+                  {DESTINATIONS[activeDest]?.eta ?? 'Live'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-400">
+                <span>{DESTINATIONS[activeDest]?.distance ?? 'Route'}</span>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(mapQuery)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold text-black hover:bg-zinc-200 transition"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <MapPin className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-zinc-500'}`} />
-                    <div className="min-w-0">
-                      <div className="truncate text-xs font-semibold">{dest.name}</div>
-                      <div className="truncate text-[10px] text-zinc-400">{dest.address}</div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 ml-2">
-                    <div className="text-[11px] font-medium text-white">{dest.eta}</div>
-                    <div className="text-[10px] text-zinc-500">{dest.distance}</div>
-                  </div>
-                </button>
-              );
-            })}
+                  <span>Start GPS</span>
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {filteredDests.map((dest) => {
+                const idx = DESTINATIONS.indexOf(dest);
+                const isSelected = mapQuery === dest.query;
+                return (
+                  <button
+                    key={dest.name}
+                    type="button"
+                    onClick={() => {
+                      setActiveDest(idx);
+                      setMapQuery(dest.query);
+                      setMapLabel(dest.name);
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur-md transition cursor-pointer ${
+                      isSelected
+                        ? 'border-white/40 bg-white text-black font-semibold'
+                        : 'border-white/15 bg-black/75 text-zinc-200 hover:bg-black'
+                    }`}
+                  >
+                    <MapPin className="h-3 w-3" />
+                    <span>{dest.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -1204,7 +1219,7 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                 min={0}
                 max={100}
                 value={volume}
-                onChange={(e) => setVolume(Number(e.target.value))}
+                onChange={(e) => onChangeVolume(Number(e.target.value))}
                 className="w-full accent-white cursor-pointer h-1"
                 aria-label="Volume"
               />
@@ -1240,45 +1255,6 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
           />
         </div>
       )}
-
-      {/* Pinned Quick Car Controls */}
-      <div className="grid grid-cols-3 gap-2.5">
-        <button
-          onClick={() => onToggleHotspot('headlights')}
-          className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl border p-3 backdrop-blur-xl transition cursor-pointer ${
-            hotspotState.headlights
-              ? 'border-white/35 bg-white/15 text-white'
-              : 'border-white/10 bg-black/55 text-zinc-400 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          <Lightbulb className="h-4 w-4" />
-          <span className="text-xs font-medium">Lights</span>
-        </button>
-
-        <button
-          onClick={() => onToggleHotspot('doorsOpen')}
-          className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl border p-3 backdrop-blur-xl transition cursor-pointer ${
-            hotspotState.doorsOpen
-              ? 'border-white/35 bg-white/15 text-white'
-              : 'border-white/10 bg-black/55 text-zinc-400 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          <DoorOpen className="h-4 w-4" />
-          <span className="text-xs font-medium">Doors</span>
-        </button>
-
-        <button
-          onClick={() => onToggleHotspot('trunkOpen')}
-          className={`flex flex-col items-center justify-center gap-1.5 rounded-2xl border p-3 backdrop-blur-xl transition cursor-pointer ${
-            hotspotState.trunkOpen
-              ? 'border-white/35 bg-white/15 text-white'
-              : 'border-white/10 bg-black/55 text-zinc-400 hover:bg-white/10 hover:text-white'
-          }`}
-        >
-          <PackageOpen className="h-4 w-4" />
-          <span className="text-xs font-medium">Trunk</span>
-        </button>
-      </div>
       </div>
     </aside>
   );
