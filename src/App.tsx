@@ -289,7 +289,7 @@ export function App() {
     (tab: TabKey) => {
       setActiveTab(tab);
       if (menuCollapsed) setMenuCollapsed(false);
-      handleSelectCameraPreset(tab === 'camera' ? 'overview' : tab);
+      handleSelectCameraPreset(tab === 'camera' || tab === 'about' ? 'overview' : tab);
     },
     [menuCollapsed, handleSelectCameraPreset]
   );

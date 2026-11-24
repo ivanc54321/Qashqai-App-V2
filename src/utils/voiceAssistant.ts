@@ -384,6 +384,14 @@ export async function processVoiceCommand(
     actions.selectTab('overview');
     return { reply: 'Opening Vehicle Overview.', source: 'offline', actionBadge: 'Overview' };
   }
+  if (/(who made|about drivesmart|about vian|about this app|open about|founder|ivan clague|vian vision)/i.test(lower)) {
+    actions.selectTab('about');
+    return {
+      reply: 'DriveSmart is made by VIAN VISION, founded by Ivan Clague.',
+      source: 'offline',
+      actionBadge: 'VIAN VISION',
+    };
+  }
   if (/(open|show|switch to)\s+(cabin cam|cabin camera|front cam|front camera|dashcam|camera)/i.test(lower)) {
     actions.selectTab('camera');
     return { reply: 'Opening Cabin Cam.', source: 'offline', actionBadge: 'Cabin Cam' };

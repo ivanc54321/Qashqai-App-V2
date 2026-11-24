@@ -40,11 +40,13 @@ import {
   Activity,
   Music2,
   Tv,
+  Info,
 } from 'lucide-react';
 import type { CarHotspotState, LayoutMode } from './CarScene';
 import type { ParkedPin } from '../App';
 import { CabinCamPanel, type CabinCamControlApi } from './CabinCamPanel';
 import { StreamingAppsPanel } from './StreamingAppsPanel';
+import { AboutPanel } from './AboutPanel';
 import type { DetectedGesture } from '../utils/cabinVision';
 import {
   RADIO_STATIONS,
@@ -58,7 +60,7 @@ import {
 import type { SpeedCamera } from '../utils/speedCameras';
 import { loadMediaRecords, saveMediaRecords, deleteMediaRecord } from '../utils/mediaStore';
 
-export type TabKey = 'overview' | 'navigation' | 'media' | 'camera';
+export type TabKey = 'overview' | 'navigation' | 'media' | 'camera' | 'about';
 export type MediaMode = 'radio' | 'spotify' | 'youtube' | 'music' | 'videos';
 
 interface MenuStripProps {
@@ -757,11 +759,24 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
             })}
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-zinc-300 shrink-0">
+          <div className="flex items-center gap-1.5 text-xs text-zinc-300 shrink-0">
             <Bluetooth className="hidden md:block h-3.5 w-3.5 text-sky-400" />
             <Wifi className="hidden md:block h-3.5 w-3.5 text-zinc-300" />
             <span className="hidden sm:inline text-[11px] text-zinc-400">11°C</span>
-            <span className="font-medium text-white text-xs">{timeStr || '12:16'}</span>
+            <span className="hidden sm:inline font-medium text-white text-xs">{timeStr || '12:16'}</span>
+            <button
+              type="button"
+              onClick={() => onSelectTab(activeTab === 'about' ? 'overview' : 'about')}
+              className={`flex h-6 w-6 items-center justify-center rounded-lg border transition cursor-pointer ${
+                activeTab === 'about'
+                  ? 'border-sky-400/50 bg-sky-500/25 text-sky-200'
+                  : 'border-white/10 bg-white/[0.06] text-zinc-300 hover:bg-white/15 hover:text-white'
+              }`}
+              aria-label="About DriveSmart by VIAN VISION"
+              title="About DriveSmart (VIAN VISION)"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
             <button
               type="button"
               onClick={onToggleCollapse}
@@ -1686,6 +1701,9 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
           onRegisterControl={onRegisterCabinCamControl}
           isCompact={isCompact}
         />
+
+        {/* Tab 5: About DriveSmart by VIAN VISION (Founded by Ivan Clague) */}
+        {activeTab === 'about' && <AboutPanel isCompact={isCompact} />}
 
         {/* Fullscreen Video Theater Overlay */}
         {videoFullscreen && currentLocalVideo && (
