@@ -19,7 +19,7 @@ import {
   Pause,
   ParkingSquare,
 } from 'lucide-react';
-import { CarScene, type CarHotspotState, type CameraPreset } from './components/CarScene';
+import { CarScene, type CarHotspotState, type CameraPreset, type LayoutMode } from './components/CarScene';
 import { MenuStrip, type TabKey } from './components/MenuStrip';
 import {
   KENT_FALLBACK_CAMERAS,
@@ -46,7 +46,17 @@ const HOTSPOT_TO_PRESET: Record<keyof CarHotspotState, CameraPreset> = {
 const WESTWOOD_CROSS_LAT = 51.3563;
 const WESTWOOD_CROSS_LON = 1.3917;
 
+function detectLayoutMode(): LayoutMode {
+  if (typeof window === 'undefined') return 'horizontal-tablet';
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  if (h > w && w < 900) return 'vertical-mobile';
+  if (w >= h && h < 520) return 'horizontal-mobile';
+  return 'horizontal-tablet';
+}
+
 export function App() {
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(detectLayoutMode);
   const [hotspotState, setHotspotState] = useState<CarHotspotState>({
     headlights: true,
     doorsOpen: false,
@@ -98,6 +108,17 @@ export function App() {
   const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
   const toggleMiniPlayRef = useRef<(() => void) | null>(null);
   const jumpToParkedRef = useRef<((coords: string) => void) | null>(null);
+
+  // Update layout mode on window resize or device orientation change
+  useEffect(() => {
+    const handleResize = () => setLayoutMode(detectLayoutMode());
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
 
   // Screen Wake Lock so tablet doesn't sleep while driving
   useEffect(() => {
@@ -285,7 +306,15 @@ export function App() {
       />
 
       {/* Full-Bleed 3D Car Stage */}
-      <main className="relative z-10 h-full w-full pb-14">
+      <main
+        className={`relative z-10 h-full w-full ${
+          layoutMode === 'horizontal-mobile'
+            ? 'pb-11'
+            : layoutMode === 'vertical-mobile'
+              ? 'pb-12'
+              : 'pb-14'
+        }`}
+      >
         <section className="absolute inset-0 z-10">
           <CarScene
             hotspotState={hotspotState}
@@ -294,17 +323,30 @@ export function App() {
             presetTrigger={presetTrigger}
             menuCollapsed={menuCollapsed}
             showLaneLines={showLaneLines}
+            layoutMode={layoutMode}
           />
         </section>
 
-        {/* Left Driving HUD Overlay (P R N D, Speedometer, Drive Mode, Speed Camera Radar & Reverse Assist) */}
+        {/* Driving HUD Overlay (P R N D, Speedometer, Drive Mode, Speed Camera Radar & Reverse Assist) */}
         <section
-          className={`pointer-events-none absolute top-0 left-0 z-20 flex flex-col items-center pt-4 px-5 transition-all duration-300 ${
-            menuCollapsed ? 'w-full max-w-[360px]' : 'w-[38%] min-w-[260px]'
+          className={`pointer-events-none absolute top-0 left-0 z-20 flex flex-col items-center transition-all duration-300 ${
+            layoutMode === 'vertical-mobile'
+              ? 'w-full pt-2 px-3'
+              : layoutMode === 'horizontal-mobile'
+                ? menuCollapsed
+                  ? 'w-full max-w-[300px] pt-2 px-3'
+                  : 'w-[35%] min-w-[200px] pt-2 px-3'
+                : menuCollapsed
+                  ? 'w-full max-w-[360px] pt-4 px-5'
+                  : 'w-[38%] min-w-[260px] pt-4 px-5'
           }`}
         >
           {/* Top-left headlight, GPS, & Night Dim indicators */}
-          <div className="pointer-events-auto flex w-full items-center justify-between mb-2">
+          <div
+            className={`pointer-events-auto flex w-full items-center justify-between ${
+              layoutMode === 'horizontal-tablet' ? 'mb-2' : 'mb-1'
+            }`}
+          >
             <div className="flex items-center gap-1.5">
               <span
                 className={`flex h-7 w-7 items-center justify-center rounded-lg border text-xs transition ${
@@ -363,19 +405,35 @@ export function App() {
             </div>
           </div>
 
-          {/* Large Speedometer + Drive Mode */}
-          <div className="pointer-events-auto flex flex-col items-center mt-1">
+          {/* Speedometer + Drive Mode */}
+          <div
+            className={`pointer-events-auto flex ${
+              layoutMode === 'vertical-mobile'
+                ? 'w-full items-center justify-between px-1 mt-0.5'
+                : 'flex-col items-center mt-1'
+            }`}
+          >
+            <div className={`flex ${layoutMode === 'vertical-mobile' ? 'items-baseline gap-1.5' : 'flex-col items-center'}`}>
+              <div
+                className={`font-light tracking-tight leading-none tabular-nums transition ${
+                  layoutMode === 'horizontal-mobile'
+                    ? 'text-3xl'
+                    : layoutMode === 'vertical-mobile'
+                      ? 'text-4xl'
+                      : 'text-6xl'
+                } ${isOverSpeed ? 'text-red-400' : 'text-white'}`}
+              >
+                {displayedSpeed}
+              </div>
+              <div className="mt-0.5 text-[11px] font-medium uppercase tracking-widest text-zinc-400">
+                mph
+              </div>
+            </div>
             <div
-              className={`text-6xl font-light tracking-tight leading-none tabular-nums transition ${
-                isOverSpeed ? 'text-red-400' : 'text-white'
+              className={`flex items-center gap-1 rounded-full border border-white/10 bg-black/50 p-0.5 backdrop-blur-md ${
+                layoutMode === 'vertical-mobile' ? 'mt-0' : layoutMode === 'horizontal-mobile' ? 'mt-1.5' : 'mt-2.5'
               }`}
             >
-              {displayedSpeed}
-            </div>
-            <div className="mt-1 text-[11px] font-medium uppercase tracking-widest text-zinc-400">
-              mph
-            </div>
-            <div className="mt-2.5 flex items-center gap-1 rounded-full border border-white/10 bg-black/50 p-0.5 backdrop-blur-md">
               {(['Eco', 'Comfort', 'Sport'] as DriveMode[]).map((mode) => (
                 <button
                   key={mode}
@@ -481,10 +539,20 @@ export function App() {
           )}
         </section>
 
-        {/* Right Split-Screen Infotainment Panel (62% width when expanded, or compact icon dock) */}
+        {/* Infotainment Panel (Split-screen right on landscape, bottom 62% on portrait, or compact icon dock) */}
         <section
-          className={`pointer-events-none absolute top-0 bottom-14 right-0 z-20 flex flex-col justify-stretch p-3 lg:p-4 transition-all duration-300 ${
-            menuCollapsed ? 'w-auto justify-center' : 'w-[62%] max-w-[820px]'
+          className={`pointer-events-none absolute z-20 flex flex-col transition-all duration-300 ${
+            layoutMode === 'vertical-mobile'
+              ? menuCollapsed
+                ? 'bottom-12 right-0 w-auto justify-end p-2'
+                : 'inset-x-0 top-[38%] bottom-12 justify-stretch p-2'
+              : layoutMode === 'horizontal-mobile'
+                ? menuCollapsed
+                  ? 'top-0 bottom-11 right-0 w-auto justify-center p-2'
+                  : 'top-0 bottom-11 right-0 w-[65%] justify-stretch p-2'
+                : menuCollapsed
+                  ? 'top-0 bottom-14 right-0 w-auto justify-center p-3 lg:p-4'
+                  : 'top-0 bottom-14 right-0 w-[62%] max-w-[820px] justify-stretch p-3 lg:p-4'
           }`}
         >
           <div className="pointer-events-auto h-full max-h-full overflow-y-auto">
@@ -514,6 +582,7 @@ export function App() {
               speedLimit={activeCameraLimit}
               parkedPin={parkedPin}
               onSaveParkedPin={saveParkedLocation}
+              layoutMode={layoutMode}
             />
           </div>
         </section>
@@ -525,9 +594,17 @@ export function App() {
       )}
 
       {/* Bottom Tesla-Style Infotainment Dock Bar */}
-      <footer className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-center justify-between border-t border-white/10 bg-black/85 px-3 sm:px-4 backdrop-blur-xl text-zinc-200">
+      <footer
+        className={`fixed inset-x-0 bottom-0 z-30 flex items-center justify-between border-t border-white/10 bg-black/85 backdrop-blur-xl text-zinc-200 ${
+          layoutMode === 'horizontal-mobile'
+            ? 'h-11 px-2.5'
+            : layoutMode === 'vertical-mobile'
+              ? 'h-12 px-2'
+              : 'h-14 px-3 sm:px-4'
+        }`}
+      >
         {/* Driver Climate */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <div className="flex items-center gap-0.5">
             <button
               type="button"
@@ -537,7 +614,11 @@ export function App() {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="w-11 text-center text-sm font-semibold tabular-nums text-white">
+            <span
+              className={`text-center font-semibold tabular-nums text-white ${
+                layoutMode === 'vertical-mobile' ? 'w-9 text-xs' : 'w-11 text-sm'
+              }`}
+            >
               {driverTemp.toFixed(1)}°
             </span>
             <button
@@ -563,41 +644,45 @@ export function App() {
 
         {/* Center Quick Car, Tabs & Persistent Mini Media Player */}
         <div className="flex items-center gap-1 sm:gap-2">
-          <button
-            type="button"
-            onClick={() => handleToggleHotspot('headlights')}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
-              hotspotState.headlights ? 'bg-white/15 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'
-            }`}
-            title="Lights"
-            aria-label="Dock Lights"
-          >
-            <Lightbulb className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleToggleHotspot('doorsOpen')}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
-              hotspotState.doorsOpen ? 'bg-white/15 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'
-            }`}
-            title="Doors"
-            aria-label="Dock Doors"
-          >
-            <DoorOpen className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleToggleHotspot('trunkOpen')}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
-              hotspotState.trunkOpen ? 'bg-white/15 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'
-            }`}
-            title="Trunk"
-            aria-label="Dock Trunk"
-          >
-            <PackageOpen className="h-4 w-4" />
-          </button>
+          {layoutMode !== 'vertical-mobile' && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleToggleHotspot('headlights')}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+                  hotspotState.headlights ? 'bg-white/15 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                }`}
+                title="Lights"
+                aria-label="Dock Lights"
+              >
+                <Lightbulb className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleHotspot('doorsOpen')}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+                  hotspotState.doorsOpen ? 'bg-white/15 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                }`}
+                title="Doors"
+                aria-label="Dock Doors"
+              >
+                <DoorOpen className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleHotspot('trunkOpen')}
+                className={`flex h-9 w-9 items-center justify-center rounded-xl transition cursor-pointer ${
+                  hotspotState.trunkOpen ? 'bg-white/15 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                }`}
+                title="Trunk"
+                aria-label="Dock Trunk"
+              >
+                <PackageOpen className="h-4 w-4" />
+              </button>
 
-          <div className="h-5 w-px bg-white/10 mx-0.5" />
+              <div className="h-5 w-px bg-white/10 mx-0.5" />
+            </>
+          )}
 
           <button
             type="button"
@@ -694,7 +779,7 @@ export function App() {
         </div>
 
         {/* Passenger Climate */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setPassengerSeatHeat((s) => !s)}
@@ -714,7 +799,11 @@ export function App() {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="w-11 text-center text-sm font-semibold tabular-nums text-white">
+            <span
+              className={`text-center font-semibold tabular-nums text-white ${
+                layoutMode === 'vertical-mobile' ? 'w-9 text-xs' : 'w-11 text-sm'
+              }`}
+            >
               {passengerTemp.toFixed(1)}°
             </span>
             <button

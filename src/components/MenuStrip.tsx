@@ -39,7 +39,7 @@ import {
   BatteryCharging,
   Activity,
 } from 'lucide-react';
-import type { CarHotspotState } from './CarScene';
+import type { CarHotspotState, LayoutMode } from './CarScene';
 import type { ParkedPin } from '../App';
 import {
   RADIO_STATIONS,
@@ -73,6 +73,7 @@ interface MenuStripProps {
   speedLimit: number;
   parkedPin: ParkedPin | null;
   onSaveParkedPin: () => void;
+  layoutMode?: LayoutMode;
 }
 
 type MediaMode = 'radio' | 'music' | 'videos';
@@ -112,7 +113,9 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
   speedLimit,
   parkedPin,
   onSaveParkedPin,
+  layoutMode = 'horizontal-tablet',
 }) => {
+  const isCompact = layoutMode !== 'horizontal-tablet';
   const [mediaMode, setMediaMode] = useState<MediaMode>('radio');
   const [timeStr, setTimeStr] = useState('');
   const [activeDest, setActiveDest] = useState(0);
@@ -622,18 +625,22 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
       )}
 
       {/* Full Expanded Menu */}
-      <div className={isCollapsed ? 'hidden' : 'flex h-full w-full flex-col gap-2.5'}>
+      <div className={isCollapsed ? 'hidden' : `flex h-full w-full flex-col ${isCompact ? 'gap-1.5' : 'gap-2.5'}`}>
         {/* Sleek Top Status Bar + Tab Switcher */}
-        <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/65 px-3.5 py-2 backdrop-blur-xl shadow-xl">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-400">
+        <div
+          className={`flex items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/65 backdrop-blur-xl shadow-xl ${
+            isCompact ? 'px-2.5 py-1.5' : 'px-3.5 py-2'
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-400 shrink-0">
               <Fuel className="h-3.5 w-3.5" />
               76%
             </span>
-            <span className="hidden sm:inline text-xs font-semibold tracking-wide text-white truncate">
+            <span className="hidden lg:inline text-xs font-semibold tracking-wide text-white truncate">
               NISSAN QASHQAI
             </span>
-            <span className="rounded bg-[#facc15] px-1.5 py-0.5 text-[10px] font-black tracking-wider text-zinc-950">
+            <span className="hidden sm:inline whitespace-nowrap shrink-0 rounded bg-[#facc15] px-1.5 py-0.5 text-[10px] font-black tracking-wider text-zinc-950">
               WG62 HJC
             </span>
           </div>
@@ -870,7 +877,11 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
 
         {/* Tab 2: Full-Height Tesla-Style Dark Google Maps Navigation */}
         {activeTab === 'navigation' && (
-          <div className="relative flex-1 min-h-[340px] w-full overflow-hidden rounded-3xl border border-white/15 bg-zinc-950 shadow-2xl">
+          <div
+            className={`relative flex-1 w-full overflow-hidden rounded-3xl border border-white/15 bg-zinc-950 shadow-2xl ${
+              isCompact ? 'min-h-[180px]' : 'min-h-[340px]'
+            }`}
+          >
             <iframe
               title="Google Maps Navigation"
               src={`https://maps.google.com/maps?q=${encodeURIComponent(gpsCoords && mapLabel === 'My GPS Location' ? gpsCoords : mapQuery)}&t=${mapStyle === 'satellite' ? 'k' : ''}&z=14&ie=UTF8&iwloc=&output=embed`}
@@ -892,14 +903,24 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
             <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/10 shadow-[inset_0_0_28px_rgba(0,0,0,0.6)]" />
 
             {/* Floating Top-Left: Blue Turn-by-Turn Card + UK Speed Limit + Camera Badge */}
-            <div className="absolute left-3 top-3 flex flex-col gap-2 max-w-[240px]">
-              <div className="flex items-center gap-2.5 rounded-xl bg-blue-600/95 px-3 py-2 text-white shadow-xl backdrop-blur-md">
-                <ArrowUp className="h-5 w-5 shrink-0" />
+            <div
+              className={`absolute left-3 top-3 flex flex-col gap-2 ${
+                layoutMode === 'vertical-mobile' ? 'max-w-[148px]' : 'max-w-[240px]'
+              }`}
+            >
+              <div
+                className={`flex items-center gap-2 rounded-xl bg-blue-600/95 text-white shadow-xl backdrop-blur-md ${
+                  layoutMode === 'vertical-mobile' ? 'px-2.5 py-1.5' : 'px-3 py-2'
+                }`}
+              >
+                <ArrowUp className="h-4 w-4 shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-sm font-bold leading-tight">
+                  <div className="text-xs sm:text-sm font-bold leading-tight">
                     {DESTINATIONS[activeDest]?.distance ?? '2.1 mi'}
                   </div>
-                  <div className="truncate text-[11px] text-blue-100">Toward {mapLabel}</div>
+                  <div className="truncate text-[10px] sm:text-[11px] text-blue-100">
+                    Toward {mapLabel}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -935,13 +956,15 @@ export const MenuStrip: React.FC<MenuStripProps> = ({
                 }}
                 className="flex items-center gap-1 rounded-xl border border-white/15 bg-black/80 p-1 backdrop-blur-md shadow-xl"
               >
-                <Search className="ml-1.5 h-3.5 w-3.5 text-zinc-400" />
+                <Search className="ml-1.5 h-3.5 w-3.5 text-zinc-400 shrink-0" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search postcode or place..."
-                  className="w-36 sm:w-44 bg-transparent px-1.5 py-1 text-xs text-white placeholder-zinc-500 outline-none"
+                  placeholder="Search postcode..."
+                  className={`${
+                    layoutMode === 'vertical-mobile' ? 'w-24' : 'w-36 sm:w-44'
+                  } bg-transparent px-1 py-1 text-xs text-white placeholder-zinc-500 outline-none`}
                 />
                 <button
                   type="submit"

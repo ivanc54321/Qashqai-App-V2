@@ -11,6 +11,7 @@ export interface CarHotspotState {
 }
 
 export type CameraPreset = 'overview' | 'navigation' | 'media' | 'lights' | 'doors' | 'trunk';
+export type LayoutMode = 'horizontal-tablet' | 'horizontal-mobile' | 'vertical-mobile';
 
 interface CameraPresetConfig {
   position: [number, number, number];
@@ -65,6 +66,7 @@ interface CarSceneProps {
   presetTrigger: number;
   menuCollapsed: boolean;
   showLaneLines: boolean;
+  layoutMode: LayoutMode;
 }
 
 declare global {
@@ -352,12 +354,14 @@ export const CarScene: React.FC<CarSceneProps> = ({
   presetTrigger,
   menuCollapsed,
   showLaneLines,
+  layoutMode,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<CarHotspotState>(hotspotState);
   const presetRef = useRef<CameraPreset>(cameraPreset);
   const menuCollapsedRef = useRef<boolean>(menuCollapsed);
   const showLaneLinesRef = useRef<boolean>(showLaneLines);
+  const layoutModeRef = useRef<LayoutMode>(layoutMode);
   const applyOffsetRef = useRef<(() => void) | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -408,8 +412,9 @@ export const CarScene: React.FC<CarSceneProps> = ({
 
   useEffect(() => {
     menuCollapsedRef.current = menuCollapsed;
+    layoutModeRef.current = layoutMode;
     applyOffsetRef.current?.();
-  }, [menuCollapsed]);
+  }, [menuCollapsed, layoutMode]);
 
   useEffect(() => {
     presetRef.current = cameraPreset;
@@ -453,11 +458,16 @@ export const CarScene: React.FC<CarSceneProps> = ({
       const w = container.clientWidth;
       const h = container.clientHeight;
       camera.aspect = w / h;
-      if (w >= 900) {
-        const xOffset = menuCollapsedRef.current ? 0 : w * 0.3;
-        camera.setViewOffset(w, h, xOffset, -h * 0.04, w, h);
-      } else {
+      const mode = layoutModeRef.current;
+      if (menuCollapsedRef.current) {
         camera.clearViewOffset();
+      } else if (mode === 'vertical-mobile') {
+        // Shift 3D car into the top 38% stage above the bottom 62% panel
+        camera.setViewOffset(w, h, 0, h * 0.27, w, h);
+      } else if (mode === 'horizontal-mobile') {
+        camera.setViewOffset(w, h, w * 0.31, -h * 0.02, w, h);
+      } else {
+        camera.setViewOffset(w, h, w * 0.3, -h * 0.04, w, h);
       }
       camera.updateProjectionMatrix();
     };
