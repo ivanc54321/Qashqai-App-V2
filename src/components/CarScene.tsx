@@ -444,8 +444,9 @@ export const CarScene: React.FC<CarSceneProps> = ({
       0.1,
       100
     );
-    // Low 3/4 front hero angle matching dark studio reference
-    camera.position.set(...CAMERA_PRESETS.overview.position);
+    // Initialize camera from initial preset (upward Navigation chase view in split-screen)
+    const initialCfg = CAMERA_PRESETS[presetRef.current];
+    camera.position.set(...initialCfg.position);
     cameraRef.current = camera;
 
     const applyCameraOffset = () => {
@@ -488,8 +489,8 @@ export const CarScene: React.FC<CarSceneProps> = ({
     controls.maxDistance = 12.0;
     controls.maxPolarAngle = Math.PI / 2 - 0.025;
     controls.minPolarAngle = 0.12;
-    controls.target.set(...CAMERA_PRESETS.overview.target);
-    controls.autoRotate = true;
+    controls.target.set(...initialCfg.target);
+    controls.autoRotate = initialCfg.autoRotate;
     controls.autoRotateSpeed = 0.5;
     controlsRef.current = controls;
 
