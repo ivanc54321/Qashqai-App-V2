@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,18 +12,39 @@ import {
   VolumeX,
   Flame,
   LocateFixed,
+  Moon,
+  Sun,
+  Camera,
+  Play,
+  Pause,
+  ParkingSquare,
 } from 'lucide-react';
 import { CarScene, type CarHotspotState, type CameraPreset } from './components/CarScene';
 import { MenuStrip, type TabKey } from './components/MenuStrip';
+import {
+  KENT_FALLBACK_CAMERAS,
+  fetchNearbySpeedCameras,
+  haversineMeters,
+  playSpeedCameraChime,
+  type SpeedCamera,
+} from './utils/speedCameras';
 
 type Gear = 'P' | 'R' | 'N' | 'D';
 type DriveMode = 'Eco' | 'Comfort' | 'Sport';
+
+export interface ParkedPin {
+  coords: string;
+  savedAt: string;
+}
 
 const HOTSPOT_TO_PRESET: Record<keyof CarHotspotState, CameraPreset> = {
   headlights: 'lights',
   doorsOpen: 'doors',
   trunkOpen: 'trunk',
 };
+
+const WESTWOOD_CROSS_LAT = 51.3563;
+const WESTWOOD_CROSS_LON = 1.3917;
 
 export function App() {
   const [hotspotState, setHotspotState] = useState<CarHotspotState>({
@@ -42,6 +63,29 @@ export function App() {
   const [gpsSpeedMph, setGpsSpeedMph] = useState<number | null>(null);
   const [gpsActive, setGpsActive] = useState<boolean>(false);
   const [gpsCoords, setGpsCoords] = useState<string | null>(null);
+  const [nightDim, setNightDim] = useState<boolean>(false);
+
+  // Speed Camera Radar state
+  const [cameras, setCameras] = useState<SpeedCamera[]>(KENT_FALLBACK_CAMERAS);
+  const [nearestCamera, setNearestCamera] = useState<{ camera: SpeedCamera; meters: number } | null>(
+    null
+  );
+  const lastChimedCamRef = useRef<string | null>(null);
+
+  // Reverse Camera feed ref
+  const reverseVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [reverseCamActive, setReverseCamActive] = useState<boolean>(false);
+  const [reverseCamError, setReverseCamError] = useState<string | null>(null);
+
+  // Where Did I Park auto-pin
+  const [parkedPin, setParkedPin] = useState<ParkedPin | null>(() => {
+    try {
+      const raw = localStorage.getItem('qashqai_parked_pin');
+      return raw ? (JSON.parse(raw) as ParkedPin) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Bottom dock climate & audio state
   const [driverTemp, setDriverTemp] = useState<number>(21.5);
@@ -50,8 +94,63 @@ export function App() {
   const [passengerSeatHeat, setPassengerSeatHeat] = useState<boolean>(false);
   const [volume, setVolume] = useState<number>(80);
   const [radioLive, setRadioLive] = useState<boolean>(false);
+  const [nowPlayingLabel, setNowPlayingLabel] = useState<string>('KISS FM');
+  const [isAudioPlaying, setIsAudioPlaying] = useState<boolean>(false);
+  const toggleMiniPlayRef = useRef<(() => void) | null>(null);
+  const jumpToParkedRef = useRef<((coords: string) => void) | null>(null);
 
-  // Optional live GPS speed & location tracking
+  // Screen Wake Lock so tablet doesn't sleep while driving
+  useEffect(() => {
+    let sentinel: WakeLockSentinel | null = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          sentinel = await navigator.wakeLock.request('screen');
+        }
+      } catch {
+        // Wake lock not permitted or unsupported
+      }
+    };
+    requestWakeLock();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') requestWakeLock();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      sentinel?.release().catch(() => {});
+    };
+  }, []);
+
+  // Fetch nearby UK speed cameras around Westwood Cross or live GPS
+  useEffect(() => {
+    const lat = gpsCoords ? parseFloat(gpsCoords.split(',')[0]) : WESTWOOD_CROSS_LAT;
+    const lon = gpsCoords ? parseFloat(gpsCoords.split(',')[1]) : WESTWOOD_CROSS_LON;
+    fetchNearbySpeedCameras(lat, lon).then((list) => {
+      setCameras(list);
+    });
+  }, [gpsCoords]);
+
+  // Compute nearest speed camera & chime when approaching (< 450m)
+  useEffect(() => {
+    const lat = gpsCoords ? parseFloat(gpsCoords.split(',')[0]) : WESTWOOD_CROSS_LAT;
+    const lon = gpsCoords ? parseFloat(gpsCoords.split(',')[1]) : WESTWOOD_CROSS_LON;
+    if (cameras.length === 0) return;
+
+    let best: { camera: SpeedCamera; meters: number } | null = null;
+    for (const cam of cameras) {
+      const m = haversineMeters(lat, lon, cam.lat, cam.lon);
+      if (!best || m < best.meters) best = { camera: cam, meters: m };
+    }
+    setNearestCamera(best);
+
+    if (best && best.meters <= 450 && gear === 'D' && lastChimedCamRef.current !== best.camera.id) {
+      lastChimedCamRef.current = best.camera.id;
+      playSpeedCameraChime();
+    }
+  }, [cameras, gpsCoords, gear]);
+
+  // Live GPS speed & location tracking
   useEffect(() => {
     if (!gpsActive || !('geolocation' in navigator)) return;
     const watchId = navigator.geolocation.watchPosition(
@@ -69,6 +168,42 @@ export function App() {
     );
     return () => navigator.geolocation.clearWatch(watchId);
   }, [gpsActive]);
+
+  // Reverse camera stream management when gear === 'R'
+  useEffect(() => {
+    if (gear !== 'R' || !reverseCamActive) {
+      const video = reverseVideoRef.current;
+      if (video && video.srcObject) {
+        const stream = video.srcObject as MediaStream;
+        stream.getTracks().forEach((t) => t.stop());
+        video.srcObject = null;
+      }
+      return;
+    }
+
+    let cancelled = false;
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        setReverseCamError(null);
+        if (reverseVideoRef.current) {
+          reverseVideoRef.current.srcObject = stream;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReverseCamError('No reverse/USB camera detected');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gear, reverseCamActive]);
 
   const handleSelectCameraPreset = useCallback((preset: CameraPreset) => {
     setCameraPreset(preset);
@@ -93,13 +228,30 @@ export function App() {
     setPresetTrigger((n) => n + 1);
   }, []);
 
+  const saveParkedLocation = useCallback(() => {
+    const coords = gpsCoords || `${WESTWOOD_CROSS_LAT},${WESTWOOD_CROSS_LON}`;
+    const pin: ParkedPin = {
+      coords,
+      savedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setParkedPin(pin);
+    try {
+      localStorage.setItem('qashqai_parked_pin', JSON.stringify(pin));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [gpsCoords]);
+
   const handleSelectGear = (nextGear: Gear) => {
     setGear(nextGear);
     if (nextGear === 'D') {
+      setReverseCamActive(false);
       handleSelectCameraPreset('navigation');
     } else if (nextGear === 'R') {
       handleSelectCameraPreset('trunk');
     } else if (nextGear === 'P') {
+      setReverseCamActive(false);
+      saveParkedLocation();
       handleSelectCameraPreset('overview');
     }
   };
@@ -117,6 +269,8 @@ export function App() {
               ? 28
               : 30;
 
+  const activeCameraLimit = nearestCamera?.camera.maxspeed ?? 30;
+  const isOverSpeed = gear === 'D' && displayedSpeed > activeCameraLimit;
   const showLaneLines = gear === 'D' || activeTab === 'navigation';
 
   return (
@@ -143,15 +297,15 @@ export function App() {
           />
         </section>
 
-        {/* Left Driving HUD Overlay (P R N D, Speedometer, Drive Mode) */}
+        {/* Left Driving HUD Overlay (P R N D, Speedometer, Drive Mode, Speed Camera Radar & Reverse Assist) */}
         <section
           className={`pointer-events-none absolute top-0 left-0 z-20 flex flex-col items-center pt-4 px-5 transition-all duration-300 ${
             menuCollapsed ? 'w-full max-w-[360px]' : 'w-[38%] min-w-[260px]'
           }`}
         >
-          {/* Top-left headlight & GPS status indicators */}
+          {/* Top-left headlight, GPS, & Night Dim indicators */}
           <div className="pointer-events-auto flex w-full items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span
                 className={`flex h-7 w-7 items-center justify-center rounded-lg border text-xs transition ${
                   hotspotState.headlights
@@ -174,6 +328,19 @@ export function App() {
               >
                 <LocateFixed className="h-3 w-3" />
                 <span>{gpsActive ? 'GPS On' : 'Use GPS'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNightDim((d) => !d)}
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition cursor-pointer ${
+                  nightDim
+                    ? 'border-indigo-400/40 bg-indigo-500/20 text-indigo-300'
+                    : 'border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white'
+                }`}
+                title="Toggle Night Dimmer"
+                aria-label="Toggle Night Dimmer"
+              >
+                {nightDim ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
               </button>
             </div>
 
@@ -198,7 +365,11 @@ export function App() {
 
           {/* Large Speedometer + Drive Mode */}
           <div className="pointer-events-auto flex flex-col items-center mt-1">
-            <div className="text-6xl font-light tracking-tight text-white leading-none tabular-nums">
+            <div
+              className={`text-6xl font-light tracking-tight leading-none tabular-nums transition ${
+                isOverSpeed ? 'text-red-400' : 'text-white'
+              }`}
+            >
               {displayedSpeed}
             </div>
             <div className="mt-1 text-[11px] font-medium uppercase tracking-widest text-zinc-400">
@@ -221,6 +392,93 @@ export function App() {
               ))}
             </div>
           </div>
+
+          {/* Speed Camera Proximity Alert Pill */}
+          {nearestCamera && gear === 'D' && (
+            <div
+              className={`pointer-events-auto mt-3 flex items-center gap-2 rounded-2xl border px-3 py-1.5 text-[11px] backdrop-blur-xl shadow-lg transition ${
+                isOverSpeed
+                  ? 'border-red-500/60 bg-red-950/75 text-red-100 animate-pulse'
+                  : 'border-amber-400/30 bg-black/70 text-zinc-200'
+              }`}
+            >
+              <Camera className={`h-3.5 w-3.5 shrink-0 ${isOverSpeed ? 'text-red-400' : 'text-amber-400'}`} />
+              <span className="truncate max-w-[160px] font-medium">
+                {nearestCamera.camera.name}
+              </span>
+              <span className="font-mono text-[10px] text-zinc-300">
+                {nearestCamera.meters < 1000
+                  ? `${Math.round(nearestCamera.meters)}m`
+                  : `${(nearestCamera.meters / 1609.34).toFixed(1)}mi`}
+              </span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-red-500 bg-white text-[9px] font-black text-zinc-950">
+                {activeCameraLimit}
+              </span>
+            </div>
+          )}
+
+          {/* Parked Car Pin Quick Chip when in P */}
+          {gear === 'P' && parkedPin && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('navigation');
+                if (menuCollapsed) setMenuCollapsed(false);
+                jumpToParkedRef.current?.(parkedPin.coords);
+              }}
+              className="pointer-events-auto mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-950/60 px-3 py-1 text-[11px] font-medium text-emerald-200 backdrop-blur-md hover:bg-emerald-900/70 transition cursor-pointer"
+            >
+              <ParkingSquare className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Parked @ {parkedPin.savedAt} • View Pin</span>
+            </button>
+          )}
+
+          {/* Reverse Assist / Live Camera Overlay when in R */}
+          {gear === 'R' && (
+            <div className="pointer-events-auto mt-3 w-full max-w-[290px] overflow-hidden rounded-2xl border border-amber-400/40 bg-black/85 p-2.5 backdrop-blur-xl shadow-2xl">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                  Reverse Assist
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReverseCamActive((v) => !v)}
+                  className="rounded-lg border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-white/20 transition cursor-pointer"
+                >
+                  {reverseCamActive ? 'Stop Cam' : 'Live Cam'}
+                </button>
+              </div>
+              {reverseCamActive ? (
+                reverseCamError ? (
+                  <div className="py-4 text-center text-[11px] text-zinc-400">{reverseCamError}</div>
+                ) : (
+                  <div className="relative overflow-hidden rounded-xl bg-black">
+                    <video
+                      ref={reverseVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="h-28 w-full object-cover"
+                    />
+                    <svg viewBox="0 0 200 80" className="pointer-events-none absolute inset-0 h-full w-full">
+                      <path d="M 35 78 L 65 20" stroke="#facc15" strokeWidth="2.5" fill="none" opacity="0.8" />
+                      <path d="M 165 78 L 135 20" stroke="#facc15" strokeWidth="2.5" fill="none" opacity="0.8" />
+                      <path d="M 65 20 L 135 20" stroke="#ef4444" strokeWidth="2" strokeDasharray="5 4" fill="none" />
+                    </svg>
+                  </div>
+                )
+              ) : (
+                <div className="flex flex-col items-center py-2">
+                  <svg viewBox="0 0 180 48" className="h-10 w-40">
+                    <path d="M 30 10 Q 90 38 150 10" stroke="#22c55e" strokeWidth="3" fill="none" opacity="0.7" />
+                    <path d="M 48 18 Q 90 36 132 18" stroke="#facc15" strokeWidth="3" fill="none" opacity="0.85" />
+                    <path d="M 66 26 Q 90 36 114 26" stroke="#ef4444" strokeWidth="3" fill="none" />
+                  </svg>
+                  <span className="text-[10px] text-zinc-400">Rear Ultrasonic Arcs Active</span>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Right Split-Screen Infotainment Panel (62% width when expanded, or compact icon dock) */}
@@ -240,17 +498,37 @@ export function App() {
               volume={volume}
               onChangeVolume={setVolume}
               onRadioLiveChange={setRadioLive}
+              onMediaStateChange={(label, playing) => {
+                setNowPlayingLabel(label);
+                setIsAudioPlaying(playing);
+              }}
+              onRegisterMiniPlayToggle={(fn) => {
+                toggleMiniPlayRef.current = fn;
+              }}
+              onRegisterJumpToCoords={(fn) => {
+                jumpToParkedRef.current = fn;
+              }}
               gpsCoords={gpsActive ? gpsCoords : null}
+              isOverSpeed={isOverSpeed}
+              nearestCamera={nearestCamera}
+              speedLimit={activeCameraLimit}
+              parkedPin={parkedPin}
+              onSaveParkedPin={saveParkedLocation}
             />
           </div>
         </section>
       </main>
 
+      {/* Auto Night Dimmer Overlay */}
+      {nightDim && (
+        <div className="pointer-events-none fixed inset-0 z-40 bg-black/40 transition-opacity duration-300" />
+      )}
+
       {/* Bottom Tesla-Style Infotainment Dock Bar */}
-      <footer className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-center justify-between border-t border-white/10 bg-black/85 px-4 backdrop-blur-xl text-zinc-200">
+      <footer className="fixed inset-x-0 bottom-0 z-30 flex h-14 items-center justify-between border-t border-white/10 bg-black/85 px-3 sm:px-4 backdrop-blur-xl text-zinc-200">
         {/* Driver Climate */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => setDriverTemp((t) => Math.max(16, Number((t - 0.5).toFixed(1))))}
@@ -283,8 +561,8 @@ export function App() {
           </button>
         </div>
 
-        {/* Center Quick Car & App Dock */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Center Quick Car, Tabs & Persistent Mini Media Player */}
+        <div className="flex items-center gap-1 sm:gap-2">
           <button
             type="button"
             onClick={() => handleToggleHotspot('headlights')}
@@ -319,7 +597,7 @@ export function App() {
             <PackageOpen className="h-4 w-4" />
           </button>
 
-          <div className="h-5 w-px bg-white/10 mx-1" />
+          <div className="h-5 w-px bg-white/10 mx-0.5" />
 
           <button
             type="button"
@@ -355,7 +633,7 @@ export function App() {
                 ? 'bg-white text-black'
                 : 'text-zinc-400 hover:bg-white/10 hover:text-white'
             }`}
-            title="Media & KISS FM"
+            title="Media & Radio"
             aria-label="Dock Media"
           >
             <Radio className="h-4 w-4" />
@@ -363,6 +641,29 @@ export function App() {
               <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
             )}
           </button>
+
+          {/* Persistent Mini Media Bar */}
+          <div className="hidden lg:flex items-center gap-2 ml-1 rounded-xl border border-white/10 bg-white/[0.05] px-2.5 py-1">
+            <button
+              type="button"
+              onClick={() => toggleMiniPlayRef.current?.()}
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-black hover:scale-105 transition cursor-pointer"
+              aria-label="Mini player play or pause"
+            >
+              {isAudioPlaying ? (
+                <Pause className="h-3 w-3 fill-current" />
+              ) : (
+                <Play className="h-3 w-3 fill-current ml-0.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectTab('media')}
+              className="max-w-[96px] truncate text-[11px] font-medium text-zinc-200 hover:text-white cursor-pointer"
+            >
+              {nowPlayingLabel}
+            </button>
+          </div>
 
           <div className="hidden md:flex items-center gap-1 ml-1 pl-2 border-l border-white/10">
             <button
@@ -393,7 +694,7 @@ export function App() {
         </div>
 
         {/* Passenger Climate */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setPassengerSeatHeat((s) => !s)}
@@ -404,7 +705,7 @@ export function App() {
           >
             <Flame className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => setPassengerTemp((t) => Math.max(16, Number((t - 0.5).toFixed(1))))}
